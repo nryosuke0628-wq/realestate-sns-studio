@@ -423,15 +423,21 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           <p className="text-sm font-semibold text-yellow-400 shrink-0">
             💡 ネタ案を選んでください <span className="text-gray-500 font-normal text-xs ml-1">★で保留にも追加できます</span>
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {session.ideas.map((idea, i) => (
-              <IdeaCard key={i} idea={idea} index={i}
-                onSelect={() => selectIdea(i)}
-                onBookmark={() => toggleBookmark(i)}
-                bookmarked={bookmarked.includes(i)}
-              />
-            ))}
-          </div>
+          {session.ideas.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              ネタ案の読み込みに失敗しました。もう一度「新規」から試してください。
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {session.ideas.map((idea, i) => (
+                <IdeaCard key={i} idea={idea} index={i}
+                  onSelect={() => selectIdea(i)}
+                  onBookmark={() => toggleBookmark(i)}
+                  bookmarked={bookmarked.includes(i)}
+                />
+              ))}
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       )}

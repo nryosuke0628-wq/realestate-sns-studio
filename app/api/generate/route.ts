@@ -113,13 +113,13 @@ export async function POST(request: NextRequest) {
 
     const MAX_TOKENS: Record<string, number> = {
       trend_collect: 1000,
-      idea_gen: 1200,
-      script_draft: 1500,
-      realestate_expert: 1000,
-      sns_consultant: 1000,
-      script_revision: 1500,
-      final_script: 1800,
-      threads_master: 1200,
+      idea_gen: 2000,
+      script_draft: 1800,
+      realestate_expert: 1200,
+      sns_consultant: 1200,
+      script_revision: 1800,
+      final_script: 2000,
+      threads_master: 1500,
     };
 
     const response = await anthropic.messages.create({
