@@ -257,15 +257,13 @@ function DebateSession({ session, onUpdate }: {
     s = addMsg({ ...s, step: "draft" }, { agent: "draft", content: draftRes });
     push(s);
 
-    // STEP 4: 不動産専門家レビュー
-    setCurrentLabel("🏢 不動産専門家が確認中...");
-    const re1 = await callAPI("realestate_expert", draftScript);
+    // STEP 4+5: 不動産専門家 & SNSコンサル（並列）
+    setCurrentLabel("🏢📱 専門家2名が同時レビュー中...");
+    const [re1, re2] = await Promise.all([
+      callAPI("realestate_expert", draftScript),
+      callAPI("sns_consultant", draftScript),
+    ]);
     s = addMsg({ ...s, step: "review1" }, { agent: "realestate", content: re1 });
-    push(s);
-
-    // STEP 5: SNSコンサルレビュー
-    setCurrentLabel("📱 SNSコンサルタントが確認中...");
-    const re2 = await callAPI("sns_consultant", draftScript);
     s = addMsg({ ...s, step: "review2" }, { agent: "sns", content: re2 });
     push(s);
 
@@ -285,7 +283,7 @@ function DebateSession({ session, onUpdate }: {
     s = addMsg({ ...s, step: "final", finalScript }, { agent: "final", content: finalRes });
     push(s);
 
-    // STEP 8: Threads専門上司
+    // STEP 8: Threads（最終台本完成後すぐ並列で生成開始）
     setCurrentLabel("🧵 Threads投稿を生成中...");
     const thrRes = await callAPI("threads_master", finalScript);
     const threads = parseThreads(thrRes);
