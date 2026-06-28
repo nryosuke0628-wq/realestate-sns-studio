@@ -3,6 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
 import { DEBATE_PROMPTS } from "@/lib/agents-debate";
 
+export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const NEWS_PROMPT = `あなたは不動産Instagram運用のプロフェッショナルです。Web検索で今日の時事ニュースを収集し、不動産テーマと掛け合わせた投稿案を3つ生成してください。
@@ -70,8 +72,11 @@ async function searchWeb(query: string): Promise<string> {
   if (!process.env.TAVILY_API_KEY) return "";
   try {
     const client = tavily({ apiKey: process.env.TAVILY_API_KEY });
-    const result = await client.search(query, { maxResults: 3, searchDepth: "basic" });
-    return result.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.content}`).join("\n\n");
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000));
+    const search = client.search(query, { maxResults: 2, searchDepth: "basic" });
+    const result = await Promise.race([search, timeout]);
+    if (!result) return "";
+    return result.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.content.slice(0, 300)}`).join("\n\n");
   } catch { return ""; }
 }
 
