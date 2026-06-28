@@ -97,7 +97,7 @@ const AGENT_META: Record<AgentMessage["agent"], { name: string; emoji: string; c
 };
 
 function AgentBubble({ msg }: { msg: AgentMessage }) {
-  const meta = AGENT_META[msg.agent];
+  const meta = AGENT_META[msg.agent] ?? { name: msg.agent, emoji: "🤖", color: "border-gray-600/30 bg-gray-800/40" };
   const [expanded, setExpanded] = useState(true);
   const isLong = msg.content.length > 600;
   const preview = isLong && !expanded ? msg.content.slice(0, 400) + "…" : msg.content;
