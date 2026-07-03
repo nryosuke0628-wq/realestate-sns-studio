@@ -33,6 +33,7 @@ interface LibraryItem {
   threads: string[];
   status: ProductionStatus;
   createdAt: number;
+  performance?: string; // 投稿後の実績メモ（再生数・保存数など）
 }
 
 interface BookmarkedIdea {
@@ -75,6 +76,12 @@ function extractIdeaTitle(idea: string): string {
   return match ? match[1].trim() : idea.slice(0, 40).replace(/\n/g, " ");
 }
 
+// レビューの「**合計**：85点/100点」から点数を抽出
+function parseScore(review: string): number | null {
+  const match = review.match(/合計[^\d]*(\d+)\s*点/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
 // ── Storage ───────────────────────────────────────────────────────────
 function loadSessions(): ChatSession[] {
   if (typeof window === "undefined") return [];
@@ -95,6 +102,9 @@ function updateLibraryStatus(id: string, status: ProductionStatus) {
 }
 function deleteLibraryItem(id: string) {
   localStorage.setItem("script_library", JSON.stringify(loadLibrary().filter(i => i.id !== id)));
+}
+function updateLibraryPerformance(id: string, performance: string) {
+  localStorage.setItem("script_library", JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, performance } : i)));
 }
 
 function loadBookmarks(): BookmarkedIdea[] {
@@ -327,7 +337,12 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
     push(s);
 
     setLabel("💡 ネタ案を3つ生成中…");
-    const ideaRes = await callAPI("idea_gen", trendRes);
+    // 過去に投稿済みで実績メモがある台本を学習材料として渡す
+    const postedWithPerf = loadLibrary().filter(i => i.status === "posted" && i.performance).slice(0, 5);
+    const perfCtx = postedWithPerf.length > 0
+      ? `\n\n【自分の過去投稿の実績】\n${postedWithPerf.map(i => `・「${i.title}」→ ${i.performance}`).join("\n")}\n※実績が良いテーマ・切り口の傾向を優先してネタ案に反映すること`
+      : "";
+    const ideaRes = await callAPI("idea_gen", trendRes + perfCtx);
     const ideas = parseIdeas(ideaRes);
     s = { ...addMsg(s, { agent: "idea", content: ideaRes }), step: "ideas", ideas };
     push(s);
@@ -363,12 +378,34 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
     setLabel("✍️ 台本作成者が改訂中…");
     const ctx = `【初稿台本】\n${draftScript}\n\n【不動産専門家レビュー】\n${re1}\n\n【SNSコンサルレビュー】\n${re2}`;
     const revRes = await callAPI("script_revision", ctx);
-    const revScript = extractBlock(revRes, "REVISED_START", "REVISED_END") || revRes;
+    let revScript = extractBlock(revRes, "REVISED_START", "REVISED_END") || revRes;
     s = addMsg({ ...s, step: "revision" }, { agent: "writer", content: revRes });
     push(s);
 
+    // どちらかのレビューが85点未満なら、改訂版をもう1往復レビューさせる
+    let finalRe1 = re1, finalRe2 = re2;
+    const score1 = parseScore(re1), score2 = parseScore(re2);
+    if ((score1 !== null && score1 < 85) || (score2 !== null && score2 < 85)) {
+      setLabel("🔁 点数が基準未満のため再レビュー中…");
+      const [re1b, re2b] = await Promise.all([
+        callAPI("realestate_expert", revScript),
+        callAPI("sns_consultant", revScript),
+      ]);
+      s = addMsg(s, { agent: "realestate", content: `【2回目レビュー】\n${re1b}` });
+      s = addMsg(s, { agent: "sns", content: `【2回目レビュー】\n${re2b}` });
+      push(s);
+
+      setLabel("✍️ 2回目の指摘を反映して再改訂中…");
+      const ctx2 = `【改訂台本】\n${revScript}\n\n【不動産専門家 2回目レビュー】\n${re1b}\n\n【SNSコンサル 2回目レビュー】\n${re2b}`;
+      const revRes2 = await callAPI("script_revision", ctx2);
+      revScript = extractBlock(revRes2, "REVISED_START", "REVISED_END") || revRes2;
+      s = addMsg(s, { agent: "writer", content: `【再改訂】\n${revRes2}` });
+      push(s);
+      finalRe1 = re1b; finalRe2 = re2b;
+    }
+
     setLabel("🏆 最終台本を仕上げ中…");
-    const finalCtx = `【改訂台本】\n${revScript}\n\n【不動産専門家レビュー】\n${re1}\n\n【SNSコンサルレビュー】\n${re2}`;
+    const finalCtx = `【改訂台本】\n${revScript}\n\n【不動産専門家レビュー】\n${finalRe1}\n\n【SNSコンサルレビュー】\n${finalRe2}`;
     const finalRes = await callAPI("final_script", finalCtx);
     const finalScript = extractBlock(finalRes, "FINAL_START", "FINAL_END") || finalRes;
     s = addMsg({ ...s, step: "final", finalScript }, { agent: "final", content: finalRes });
@@ -614,6 +651,17 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
             );
           })}
         </div>
+
+        {/* 投稿済みなら実績メモ入力欄（次回のネタ案生成でAIが学習） */}
+        {item.status === "posted" && (
+          <input
+            type="text"
+            defaultValue={item.performance ?? ""}
+            onBlur={(e) => updateLibraryPerformance(item.id, e.target.value)}
+            placeholder="実績を入力（例：再生1.2万・保存320）→ 次回生成でAIが学習"
+            className="w-full mb-3 bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-green-600/50 placeholder:text-gray-600"
+          />
+        )}
 
         <div className="flex gap-2">
           <button onClick={() => setShowScript(!showScript)}

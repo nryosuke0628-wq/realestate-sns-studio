@@ -76,16 +76,24 @@ async function searchWeb(query: string): Promise<string> {
     const search = client.search(query, { maxResults: 2, searchDepth: "basic" });
     const result = await Promise.race([search, timeout]);
     if (!result) return "";
-    return result.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.content.slice(0, 300)}`).join("\n\n");
+    return result.results.map((r) => `● ${r.title}\n${r.content.slice(0, 400)}`).join("\n\n");
   } catch { return ""; }
 }
 
 const currentYear = new Date().getFullYear();
 const currentMonth = new Date().getMonth() + 1;
 
-const SEARCH_MAP: Record<string, string> = {
-  trend_collect: `不動産 Instagram TikTok リール バズ ${currentYear}年${currentMonth}月 最新 再生数`,
-  news_realestate: `${currentYear}年${currentMonth}月 最新ニュース 不動産 住宅ローン 金利`,
+// 複数クエリを並列検索して情報量を増やす（並列なので所要時間は1クエリ分）
+const SEARCH_MAP: Record<string, string[]> = {
+  trend_collect: [
+    `不動産 Instagram リール バズ ${currentYear}年${currentMonth}月 再生数 人気`,
+    `不動産 TikTok 宅建 一人暮らし 賃貸 バズ動画 ${currentYear}年`,
+    `${currentYear}年${currentMonth}月 不動産 ニュース 住宅ローン 金利 市況`,
+  ],
+  news_realestate: [
+    `${currentYear}年${currentMonth}月 最新ニュース 不動産 住宅ローン 金利`,
+    `${currentYear}年${currentMonth}月 話題 ニュース トレンド`,
+  ],
 };
 
 export async function POST(request: NextRequest) {
@@ -103,7 +111,8 @@ export async function POST(request: NextRequest) {
     let systemPrompt = promptMap[feature] ?? DEBATE_PROMPTS.trend_collect;
 
     if (SEARCH_MAP[feature]) {
-      const results = await searchWeb(SEARCH_MAP[feature]);
+      const allResults = await Promise.all(SEARCH_MAP[feature].map(q => searchWeb(q)));
+      const results = allResults.filter(Boolean).join("\n\n");
       if (results) systemPrompt += `\n\n【リアルタイム検索結果】\n${results}`;
     }
 
