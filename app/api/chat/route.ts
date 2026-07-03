@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
-import { getAgent, AgentId } from "@/lib/agents";
+import { getFeature, FeatureId } from "@/lib/features";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
-
-const SEARCH_AGENT_IDS: AgentId[] = ["research", "trend", "all"];
 
 async function searchWeb(query: string): Promise<string> {
   if (!process.env.TAVILY_API_KEY) return "";
@@ -17,51 +15,39 @@ async function searchWeb(query: string): Promise<string> {
       maxResults: 5,
       searchDepth: "basic",
     });
-    const snippets = result.results
+    return result.results
       .map((r, i) => `[${i + 1}] ${r.title}\n${r.content}`)
       .join("\n\n");
-    return snippets;
   } catch {
     return "";
   }
 }
 
-function buildSearchQuery(message: string, agentId: AgentId): string {
-  const base = message.slice(0, 100);
-  if (agentId === "trend") return `不動産 Instagram Reels トレンド ${base}`;
-  if (agentId === "research") return `不動産市場 最新情報 ${base}`;
-  return `不動産 SNS ${base}`;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, agentId } = body as { message: string; agentId: AgentId };
+    const { input, featureId } = body as { input: string; featureId: FeatureId };
 
-    if (!message || !agentId) {
-      return NextResponse.json(
-        { error: "message and agentId are required" },
-        { status: 400 }
-      );
+    if (!input || !featureId) {
+      return NextResponse.json({ error: "input and featureId are required" }, { status: 400 });
     }
 
-    const agent = getAgent(agentId);
+    const feature = getFeature(featureId);
+    let systemPrompt = feature.systemPrompt;
 
-    let systemPrompt = agent.systemPrompt;
-
-    if (SEARCH_AGENT_IDS.includes(agentId)) {
-      const query = buildSearchQuery(message, agentId);
-      const searchResults = await searchWeb(query);
+    if (feature.useSearch) {
+      const searchQuery = `不動産 Instagram ${input.slice(0, 80)}`;
+      const searchResults = await searchWeb(searchQuery);
       if (searchResults) {
-        systemPrompt += `\n\n【リアルタイム検索結果】\n以下の最新情報を参考にして回答してください：\n\n${searchResults}`;
+        systemPrompt += `\n\n【リアルタイム検索結果】\n${searchResults}`;
       }
     }
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 1500,
+      max_tokens: 2000,
       system: systemPrompt,
-      messages: [{ role: "user", content: message }],
+      messages: [{ role: "user", content: input }],
     });
 
     const reply =
@@ -70,9 +56,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ reply });
   } catch (error) {
     console.error("API error:", error);
-    return NextResponse.json(
-      { error: "Failed to get response from AI" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "AI応答の取得に失敗しました" }, { status: 500 });
   }
 }

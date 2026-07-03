@@ -135,6 +135,8 @@ export async function POST(request: NextRequest) {
       script_revision: 1800,
       final_script: 2000,
       threads_master: 1500,
+      weekly_plan: 2500,
+      caption_gen: 800,
     };
 
     const response = await anthropic.messages.create({

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────
-type Tab = "script" | "library" | "news" | "analyze";
+type Tab = "weekly" | "script" | "library" | "news" | "analyze";
 type AnalyzeMode = "buzz" | "data";
 type DebateStep = "idle" | "trend" | "ideas" | "draft" | "review1" | "review2" | "revision" | "final" | "threads" | "done";
 type ProductionStatus = "none" | "filming" | "editing" | "posted";
@@ -24,6 +24,7 @@ interface ChatSession {
   selectedIdea: number | null;
   finalScript: string;
   finalThreads: string[];
+  caption?: string; // 自動生成されたキャプション＋ハッシュタグ
 }
 
 interface LibraryItem {
@@ -34,6 +35,12 @@ interface LibraryItem {
   status: ProductionStatus;
   createdAt: number;
   performance?: string; // 投稿後の実績メモ（再生数・保存数など）
+  caption?: string;
+}
+
+interface WeeklyPlan {
+  createdAt: number;
+  days: { day: string; idea: string; scripted: boolean }[];
 }
 
 interface BookmarkedIdea {
@@ -82,6 +89,33 @@ function parseScore(review: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
+function parsePlan(text: string): { day: string; idea: string; scripted: boolean }[] {
+  const s = text.indexOf("PLAN_START"), e = text.indexOf("PLAN_END");
+  if (s === -1 || e === -1) return [];
+  return text.slice(s + "PLAN_START".length, e).split("PLAN_SPLIT").map(t => t.trim()).filter(Boolean)
+    .map(idea => {
+      const dayMatch = idea.match(/【(.+?)】/);
+      return { day: dayMatch ? dayMatch[1] : "", idea, scripted: false };
+    });
+}
+
+// Cronが毎朝収集したトレンドレポート（24h以内）を取得。なければnull
+async function fetchLatestTrend(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/trend-latest");
+    const data = await res.json();
+    return data.report ?? null;
+  } catch { return null; }
+}
+
+// 過去の投稿実績を学習コンテキストとして組み立て
+function buildPerfContext(): string {
+  const posted = loadLibrary().filter(i => i.status === "posted" && i.performance).slice(0, 5);
+  return posted.length > 0
+    ? `\n\n【自分の過去投稿の実績】\n${posted.map(i => `・「${i.title}」→ ${i.performance}`).join("\n")}\n※実績が良いテーマ・切り口の傾向を優先すること`
+    : "";
+}
+
 // ── Storage ───────────────────────────────────────────────────────────
 function loadSessions(): ChatSession[] {
   if (typeof window === "undefined") return [];
@@ -105,6 +139,25 @@ function deleteLibraryItem(id: string) {
 }
 function updateLibraryPerformance(id: string, performance: string) {
   localStorage.setItem("script_library", JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, performance } : i)));
+}
+
+function loadWeeklyPlan(): WeeklyPlan | null {
+  if (typeof window === "undefined") return null;
+  try { return JSON.parse(localStorage.getItem("weekly_plan") ?? "null"); } catch { return null; }
+}
+function saveWeeklyPlan(plan: WeeklyPlan) { localStorage.setItem("weekly_plan", JSON.stringify(plan)); }
+
+// 週間プランのネタから台本生成セッションを作成（台本生成タブに引き継ぐ）
+function createSessionFromIdea(idea: string): void {
+  const sessions = loadSessions();
+  const s: ChatSession = {
+    id: Date.now().toString(),
+    title: extractIdeaTitle(idea).slice(0, 24),
+    createdAt: Date.now(), step: "ideas",
+    messages: [], ideas: [idea], bookmarkedIdeas: [], selectedIdea: null,
+    finalScript: "", finalThreads: [],
+  };
+  saveSessions([s, ...sessions]);
 }
 
 function loadBookmarks(): BookmarkedIdea[] {
@@ -350,18 +403,18 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
 
   const startDebate = async () => {
     setIdeaRunning(true);
-    setLabel("🌐 トレンドを収集中…");
-    const trendRes = await callAPI("trend_collect");
+    setLabel("🌐 トレンドを確認中…");
+    // 毎朝Cronが自動収集したレポートがあれば使う（数秒で完了）。なければその場で検索
+    let trendRes = await fetchLatestTrend();
+    if (!trendRes) {
+      setLabel("🌐 トレンドを収集中…");
+      trendRes = await callAPI("trend_collect");
+    }
     let s = addMsg({ ...session, step: "trend" }, { agent: "trend", content: trendRes });
     push(s);
 
     setLabel("💡 ネタ案を3つ生成中…");
-    // 過去に投稿済みで実績メモがある台本を学習材料として渡す
-    const postedWithPerf = loadLibrary().filter(i => i.status === "posted" && i.performance).slice(0, 5);
-    const perfCtx = postedWithPerf.length > 0
-      ? `\n\n【自分の過去投稿の実績】\n${postedWithPerf.map(i => `・「${i.title}」→ ${i.performance}`).join("\n")}\n※実績が良いテーマ・切り口の傾向を優先してネタ案に反映すること`
-      : "";
-    const ideaRes = await callAPI("idea_gen", trendRes + perfCtx);
+    const ideaRes = await callAPI("idea_gen", trendRes + buildPerfContext());
     const ideas = parseIdeas(ideaRes);
     s = { ...addMsg(s, { agent: "idea", content: ideaRes }), step: "ideas", ideas };
     push(s);
@@ -430,13 +483,17 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
     s = addMsg({ ...s, step: "final", finalScript }, { agent: "final", content: finalRes });
     push(s);
 
-    setLabel("🧵 Threads投稿を生成中…");
-    const thrRes = await callAPI("threads_master", finalScript);
+    setLabel("🧵📝 Threads＆キャプションを生成中…");
+    const [thrRes, capRes] = await Promise.all([
+      callAPI("threads_master", finalScript),
+      callAPI("caption_gen", finalScript),
+    ]);
     const finalThreads = parseThreads(thrRes);
-    s = { ...s, step: "done", finalThreads };
+    const caption = extractBlock(capRes, "CAPTION_START", "CAPTION_END") || capRes;
+    s = { ...s, step: "done", finalThreads, caption };
     push(s);
 
-    saveLibraryItem({ id: s.id, title: extractIdeaTitle(session.ideas[idx]), script: finalScript, threads: finalThreads, status: "none", createdAt: Date.now() });
+    saveLibraryItem({ id: s.id, title: extractIdeaTitle(session.ideas[idx]), script: finalScript, threads: finalThreads, caption, status: "none", createdAt: Date.now() });
     setScriptRunning(false);
     setLabel("");
   };
@@ -520,6 +577,17 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
             <LinkedText text={session.finalScript} className="p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed" />
           </div>
 
+          {/* キャプション */}
+          {session.caption && (
+            <div className="border border-pink-500/30 bg-pink-950/10 rounded-2xl overflow-hidden shrink-0">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-pink-500/20">
+                <span className="font-bold text-pink-400 text-sm">📝 キャプション＆ハッシュタグ</span>
+                <CopyBtn text={session.caption} />
+              </div>
+              <pre className="p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{session.caption}</pre>
+            </div>
+          )}
+
           {/* Threads */}
           {session.finalThreads.length > 0 && <ThreadsPanel posts={session.finalThreads} />}
 
@@ -538,6 +606,95 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           </div>
 
           <div ref={bottomRef} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Weekly Plan Tab ───────────────────────────────────────────────────
+function WeeklyTab({ goScript }: { goScript: () => void }) {
+  const [plan, setPlan] = useState<WeeklyPlan | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [label, setLabel] = useState("");
+  const [trendInfo, setTrendInfo] = useState<"cron" | "live" | null>(null);
+
+  useEffect(() => { setPlan(loadWeeklyPlan()); }, []);
+
+  const generate = async () => {
+    setLoading(true);
+    setLabel("🌐 トレンドを確認中…");
+    let trend = await fetchLatestTrend();
+    if (trend) {
+      setTrendInfo("cron");
+    } else {
+      setLabel("🌐 トレンドを収集中…");
+      trend = await callAPI("trend_collect");
+      setTrendInfo("live");
+    }
+
+    setLabel("📅 今週の投稿プラン5本分を生成中…");
+    const res = await callAPI("weekly_plan", trend + buildPerfContext());
+    const days = parsePlan(res);
+    const newPlan: WeeklyPlan = { createdAt: Date.now(), days };
+    setPlan(newPlan);
+    saveWeeklyPlan(newPlan);
+    setLoading(false);
+    setLabel("");
+  };
+
+  const makeScript = (i: number) => {
+    if (!plan) return;
+    createSessionFromIdea(plan.days[i].idea);
+    const updated = { ...plan, days: plan.days.map((d, j) => j === i ? { ...d, scripted: true } : d) };
+    setPlan(updated);
+    saveWeeklyPlan(updated);
+    goScript();
+  };
+
+  return (
+    <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
+      <div className="flex flex-wrap items-center gap-3 mb-5">
+        <button onClick={generate} disabled={loading}
+          className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+          {loading ? "生成中…" : plan ? "📅 プランを作り直す" : "📅 今週のプランを生成"}
+        </button>
+        {plan && !loading && (
+          <span className="text-xs text-gray-500">
+            {new Date(plan.createdAt).toLocaleDateString("ja-JP")} 生成
+            {trendInfo === "cron" && " ・今朝の自動収集トレンド使用"}
+          </span>
+        )}
+      </div>
+
+      {loading && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 max-w-md">
+          <Spinner label={label} />
+        </div>
+      )}
+
+      {!loading && !plan && (
+        <div className="text-center py-20 text-gray-600">
+          <div className="text-4xl mb-3">📅</div>
+          <p className="text-sm">今週撮る5本分の投稿プランを一括生成します<br />各ネタは「台本化」ボタンでそのまま台本になります</p>
+        </div>
+      )}
+
+      {!loading && plan && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {plan.days.map((d, i) => (
+            <div key={i} className={`border rounded-2xl p-4 flex flex-col gap-3 ${d.scripted ? "border-green-600/40 bg-green-950/10" : "border-gray-700 bg-gray-900"}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-yellow-500">{d.day || `${i + 1}本目`}</span>
+                {d.scripted && <span className="text-xs text-green-400">✅ 台本化済み</span>}
+              </div>
+              <LinkedText text={d.idea} className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed flex-1" />
+              <button onClick={() => makeScript(i)}
+                className={`text-xs py-2 font-bold rounded-xl transition-colors ${d.scripted ? "border border-gray-700 text-gray-500 hover:text-gray-300" : "bg-yellow-600 hover:bg-yellow-500 text-black"}`}>
+                {d.scripted ? "もう一度台本化" : "🎬 台本化する"}
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -700,6 +857,15 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
         <div className="border-t border-gray-800 p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={item.script} /></div>
           <LinkedText text={item.script} />
+          {item.caption && (
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-pink-400">📝 キャプション</span>
+                <CopyBtn text={item.caption} />
+              </div>
+              <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{item.caption}</pre>
+            </div>
+          )}
         </div>
       )}
 
@@ -820,6 +986,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("script");
 
   const tabs: { key: Tab; label: string }[] = [
+    { key: "weekly",  label: "📅 週間プラン" },
     { key: "script",  label: "🎬 台本生成" },
     { key: "library", label: "📚 ライブラリ" },
     { key: "news",    label: "🗞 時事ネタ" },
@@ -843,6 +1010,7 @@ export default function Home() {
           ))}
         </div>
       </nav>
+      {tab === "weekly"  && <WeeklyTab goScript={() => setTab("script")} />}
       {tab === "script"  && <ScriptTab />}
       {tab === "library" && <LibraryTab />}
       {tab === "news"    && <NewsTab />}
