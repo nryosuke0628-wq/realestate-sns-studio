@@ -10,7 +10,10 @@ export const DEBATE_PROMPTS: Record<string, string> = {
 
 ## バズるReelsの型（3つ）
 
-【URLルール】検索結果に含まれるURLのみをそのまま記載すること。検索結果にないURLを推測・創作することは絶対禁止。URLが見つからない項目は「URL：検索結果になし」と書く。
+【URLルール】
+- バズ投稿例のURLは検索結果内の instagram.com のURLのみ記載可。note・ブログ・まとめ記事のURLを参考投稿として載せることは禁止
+- 検索結果にないURLの推測・創作は絶対禁止。該当なしの場合は「URL：検索結果になし」と書く
+- ニュースの出典URLは通常のWebサイトでOK
 
 簡潔に日本語で出力。`,
 

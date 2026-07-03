@@ -68,12 +68,16 @@ const DATA_ANALYZE_PROMPT = `あなたは不動産Instagram専門のSNSアナリ
 
 日本語で出力。`;
 
-async function searchWeb(query: string): Promise<string> {
+async function searchWeb(query: string, domains?: string[]): Promise<string> {
   if (!process.env.TAVILY_API_KEY) return "";
   try {
     const client = tavily({ apiKey: process.env.TAVILY_API_KEY });
     const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000));
-    const search = client.search(query, { maxResults: 2, searchDepth: "basic" });
+    const search = client.search(query, {
+      maxResults: 3,
+      searchDepth: "basic",
+      ...(domains ? { includeDomains: domains } : {}),
+    });
     const result = await Promise.race([search, timeout]);
     if (!result) return "";
     return result.results.map((r) => `● ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 400)}`).join("\n\n");
@@ -84,15 +88,16 @@ const currentYear = new Date().getFullYear();
 const currentMonth = new Date().getMonth() + 1;
 
 // 複数クエリを並列検索して情報量を増やす（並列なので所要時間は1クエリ分）
-const SEARCH_MAP: Record<string, string[]> = {
+// 参考投稿はInstagramドメイン限定で検索し、note等の記事URLが混ざるのを防ぐ
+const SEARCH_MAP: Record<string, { q: string; domains?: string[] }[]> = {
   trend_collect: [
-    `不動産 Instagram リール バズ ${currentYear}年${currentMonth}月 再生数 人気`,
-    `不動産 TikTok 宅建 一人暮らし 賃貸 バズ動画 ${currentYear}年`,
-    `${currentYear}年${currentMonth}月 不動産 ニュース 住宅ローン 金利 市況`,
+    { q: `不動産 リール 賃貸 マイホーム 内見`, domains: ["instagram.com"] },
+    { q: `不動産 宅建 住宅ローン 一人暮らし reel`, domains: ["instagram.com"] },
+    { q: `${currentYear}年${currentMonth}月 不動産 ニュース 住宅ローン 金利 市況` },
   ],
   news_realestate: [
-    `${currentYear}年${currentMonth}月 最新ニュース 不動産 住宅ローン 金利`,
-    `${currentYear}年${currentMonth}月 話題 ニュース トレンド`,
+    { q: `${currentYear}年${currentMonth}月 最新ニュース 不動産 住宅ローン 金利` },
+    { q: `${currentYear}年${currentMonth}月 話題 ニュース トレンド` },
   ],
 };
 
@@ -112,7 +117,7 @@ export async function POST(request: NextRequest) {
     let systemPrompt = `【最重要】今日は${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日です。「現在」「今」「最新」と書く場合は必ずこの年月を使うこと。学習データ上の古い日付（2025年など）を「現在」として書くことを禁止します。\n\n` + (promptMap[feature] ?? DEBATE_PROMPTS.trend_collect);
 
     if (SEARCH_MAP[feature]) {
-      const allResults = await Promise.all(SEARCH_MAP[feature].map(q => searchWeb(q)));
+      const allResults = await Promise.all(SEARCH_MAP[feature].map(({ q, domains }) => searchWeb(q, domains)));
       const results = allResults.filter(Boolean).join("\n\n");
       if (results) systemPrompt += `\n\n【リアルタイム検索結果】\n${results}`;
     }
