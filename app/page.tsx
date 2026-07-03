@@ -120,6 +120,25 @@ function deleteBookmark(id: string) {
 }
 
 // ── Small Components ──────────────────────────────────────────────────
+// テキスト中のURLをタップ可能なリンクに変換して表示
+function LinkedText({ text, className }: { text: string; className?: string }) {
+  const parts = text.split(/(https?:\/\/[^\s)）」】、。]+)/g);
+  return (
+    <pre className={className ?? "text-sm text-gray-200 whitespace-pre-wrap leading-relaxed"}>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+            className="text-blue-400 underline hover:text-blue-300 break-all">
+            {part}
+          </a>
+        ) : (
+          part
+        )
+      )}
+    </pre>
+  );
+}
+
 function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -173,7 +192,7 @@ function AgentBubble({ msg }: { msg: AgentMessage }) {
           <CopyBtn text={msg.content} />
         </div>
       </div>
-      <pre className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{preview}</pre>
+      <LinkedText text={preview} />
     </div>
   );
 }
@@ -300,7 +319,7 @@ function IdeaCard({ idea, index, onSelect, onBookmark, bookmarked }: {
         </button>
       </div>
       {expanded && (
-        <pre className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed border-t border-gray-800 pt-3">{idea}</pre>
+        <LinkedText text={idea} className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed border-t border-gray-800 pt-3" />
       )}
       <div className="flex gap-2 mt-auto">
         <button onClick={() => setExpanded(!expanded)}
@@ -498,7 +517,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
               <span className="font-bold text-yellow-400 text-sm">🏆 完成台本</span>
               <CopyBtn text={session.finalScript} />
             </div>
-            <pre className="p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{session.finalScript}</pre>
+            <LinkedText text={session.finalScript} className="p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed" />
           </div>
 
           {/* Threads */}
@@ -680,7 +699,7 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
       {showScript && (
         <div className="border-t border-gray-800 p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={item.script} /></div>
-          <pre className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{item.script}</pre>
+          <LinkedText text={item.script} />
         </div>
       )}
 
@@ -709,7 +728,7 @@ function LibraryTab() {
           <div className="space-y-2">
             {bookmarks.map(b => (
               <div key={b.id} className="border border-yellow-700/30 bg-yellow-900/10 rounded-xl p-3 flex items-start gap-3">
-                <pre className="text-xs text-gray-300 whitespace-pre-wrap flex-1 leading-relaxed">{b.idea}</pre>
+                <LinkedText text={b.idea} className="text-xs text-gray-300 whitespace-pre-wrap flex-1 leading-relaxed" />
                 <button onClick={() => { deleteBookmark(b.id); setBookmarks(loadBookmarks()); }}
                   className="text-gray-600 hover:text-red-500 text-xs shrink-0 mt-0.5">✕</button>
               </div>
@@ -755,7 +774,7 @@ function NewsTab() {
       {output && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={output} /></div>
-          <pre className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{output}</pre>
+          <LinkedText text={output} />
         </div>
       )}
     </div>
@@ -789,7 +808,7 @@ function AnalyzeTab() {
       {output && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={output} /></div>
-          <pre className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{output}</pre>
+          <LinkedText text={output} />
         </div>
       )}
     </div>

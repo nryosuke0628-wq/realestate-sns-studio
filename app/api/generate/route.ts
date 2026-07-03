@@ -76,7 +76,7 @@ async function searchWeb(query: string): Promise<string> {
     const search = client.search(query, { maxResults: 2, searchDepth: "basic" });
     const result = await Promise.race([search, timeout]);
     if (!result) return "";
-    return result.results.map((r) => `● ${r.title}\n${r.content.slice(0, 400)}`).join("\n\n");
+    return result.results.map((r) => `● ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 400)}`).join("\n\n");
   } catch { return ""; }
 }
 
@@ -108,7 +108,8 @@ export async function POST(request: NextRequest) {
       data_analyze: DATA_ANALYZE_PROMPT,
     };
 
-    let systemPrompt = promptMap[feature] ?? DEBATE_PROMPTS.trend_collect;
+    const today = new Date();
+    let systemPrompt = `【最重要】今日は${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日です。「現在」「今」「最新」と書く場合は必ずこの年月を使うこと。学習データ上の古い日付（2025年など）を「現在」として書くことを禁止します。\n\n` + (promptMap[feature] ?? DEBATE_PROMPTS.trend_collect);
 
     if (SEARCH_MAP[feature]) {
       const allResults = await Promise.all(SEARCH_MAP[feature].map(q => searchWeb(q)));
