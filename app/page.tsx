@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import EditorTab from "./EditorTab";
+import Teleprompter from "./Teleprompter";
 
 // ── Types ─────────────────────────────────────────────────────────────
-type Tab = "weekly" | "script" | "library" | "dashboard" | "news" | "analyze";
+type Tab = "weekly" | "script" | "library" | "editor" | "dashboard" | "news" | "analyze";
 
 interface DashboardData {
   connected: boolean;
@@ -408,6 +410,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
   const [scriptRunning, setScriptRunning] = useState(false);
   const [label, setLabel] = useState("");
   const [showDebate, setShowDebate] = useState(false);
+  const [prompterOpen, setPrompterOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [session.messages.length]);
@@ -586,7 +589,13 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           <div className="border border-yellow-500/40 bg-yellow-900/10 rounded-2xl overflow-hidden shrink-0">
             <div className="flex items-center justify-between px-4 py-3 border-b border-yellow-500/20">
               <span className="font-bold text-yellow-400 text-sm">🏆 完成台本</span>
-              <CopyBtn text={session.finalScript} />
+              <div className="flex gap-2 items-center">
+                <button onClick={() => setPrompterOpen(true)}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-green-700/40 text-green-400 hover:border-green-500 transition-colors">
+                  📖 プロンプター
+                </button>
+                <CopyBtn text={session.finalScript} />
+              </div>
             </div>
             <LinkedText text={session.finalScript} className="p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed" />
           </div>
@@ -621,6 +630,10 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
 
           <div ref={bottomRef} />
         </div>
+      )}
+
+      {prompterOpen && session.finalScript && (
+        <Teleprompter script={session.finalScript} onClose={() => setPrompterOpen(false)} />
       )}
     </div>
   );
@@ -815,6 +828,7 @@ const STATUS_CONFIG: Record<ProductionStatus, { label: string; active: string }>
 function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus: (id: string, s: ProductionStatus) => void; onDelete: (id: string) => void }) {
   const [showScript, setShowScript] = useState(false);
   const [showThreads, setShowThreads] = useState(false);
+  const [prompter, setPrompter] = useState(false);
   const statuses: ProductionStatus[] = ["filming", "editing", "posted"];
 
   return (
@@ -853,10 +867,14 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
           />
         )}
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowScript(!showScript)}
             className="flex-1 text-xs py-2 border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-gray-200 rounded-xl transition-colors">
             {showScript ? "台本を閉じる ▲" : "台本を見る ▼"}
+          </button>
+          <button onClick={() => setPrompter(true)}
+            className="flex-1 text-xs py-2 border border-green-700/40 hover:border-green-500 text-green-400 rounded-xl transition-colors">
+            📖 プロンプター
           </button>
           {item.threads.length > 0 && (
             <button onClick={() => setShowThreads(!showThreads)}
@@ -865,6 +883,7 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
             </button>
           )}
         </div>
+        {prompter && <Teleprompter script={item.script} onClose={() => setPrompter(false)} />}
       </div>
 
       {showScript && (
@@ -1118,6 +1137,7 @@ export default function Home() {
     { key: "weekly",  label: "📅 週間プラン" },
     { key: "script",  label: "🎬 台本生成" },
     { key: "library", label: "📚 ライブラリ" },
+    { key: "editor",  label: "🎞 自動編集" },
     { key: "dashboard", label: "📈 ダッシュボード" },
     { key: "news",    label: "🗞 時事ネタ" },
     { key: "analyze", label: "🔍 分析" },
@@ -1143,6 +1163,7 @@ export default function Home() {
       {tab === "weekly"  && <WeeklyTab goScript={() => setTab("script")} />}
       {tab === "script"  && <ScriptTab />}
       {tab === "library" && <LibraryTab />}
+      {tab === "editor"  && <EditorTab />}
       {tab === "dashboard" && <DashboardTab />}
       {tab === "news"    && <NewsTab />}
       {tab === "analyze" && <AnalyzeTab />}
