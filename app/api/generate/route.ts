@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
 import { DEBATE_PROMPTS } from "@/lib/agents-debate";
+import { getSupabase } from "@/lib/supabase";
 
 export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s
 
@@ -124,6 +125,26 @@ export async function POST(request: NextRequest) {
 
     if (options && Object.keys(options).length > 0) {
       systemPrompt += `\n\n【条件】${JSON.stringify(options)}`;
+    }
+
+    // ネタ案・週間プラン生成時は、実際のInstagramインサイト（保存数上位）を学習材料に加える
+    if (feature === "idea_gen" || feature === "weekly_plan") {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          const { data } = await supabase
+            .from("ig_media")
+            .select("caption, views, saves, likes")
+            .order("saves", { ascending: false, nullsFirst: false })
+            .limit(5);
+          if (data && data.length > 0) {
+            const lines = data.map(m =>
+              `・「${(m.caption ?? "").slice(0, 50)}」 再生${m.views ?? "?"} 保存${m.saves ?? "?"} いいね${m.likes ?? "?"}`
+            ).join("\n");
+            systemPrompt += `\n\n【自アカウントの実測インサイト（保存数上位）】\n${lines}\n※保存数が多い投稿のテーマ・切り口の傾向を分析し、ネタ選定に反映すること`;
+          }
+        } catch { /* インサイト未取得でも生成は続行 */ }
+      }
     }
 
     const MAX_TOKENS: Record<string, number> = {
