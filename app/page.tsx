@@ -41,6 +41,7 @@ interface ChatSession {
   finalScript: string;
   finalThreads: string[];
   caption?: string; // 自動生成されたキャプション＋ハッシュタグ
+  approved?: boolean; // 「このまま使う」で確定済みか
 }
 
 interface LibraryItem {
@@ -411,6 +412,9 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
   const [label, setLabel] = useState("");
   const [showDebate, setShowDebate] = useState(false);
   const [prompterOpen, setPrompterOpen] = useState(false);
+  const [revOpen, setRevOpen] = useState(false);
+  const [revComment, setRevComment] = useState("");
+  const [revLoading, setRevLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [session.messages.length]);
@@ -511,16 +515,66 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
     push(s);
 
     saveLibraryItem({ id: s.id, title: extractIdeaTitle(session.ideas[idx]), script: finalScript, threads: finalThreads, caption, status: "none", createdAt: Date.now() });
+    // Threadsキュー投入は「✅ このまま使う」で確定したときに行う（修正の余地を残すため）
+    setScriptRunning(false);
+    setLabel("");
+  };
 
-    // Threads自動投稿キューに追加（毎日19時に1件ずつ自動投稿される）
-    if (finalThreads.length > 0) {
+  // ✅ このまま使う：確定してThreads自動投稿キューへ
+  const approve = async () => {
+    if (!session.approved && session.finalThreads.length > 0) {
       fetch("/api/threads-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: extractIdeaTitle(session.ideas[idx]), posts: finalThreads }),
+        body: JSON.stringify({ title: session.title, posts: session.finalThreads }),
       }).catch(() => {});
     }
-    setScriptRunning(false);
+    onUpdate({ ...session, approved: true });
+  };
+
+  // ✏️ 修正指示を反映して再生成（キャプション・Threadsも作り直し）
+  const submitRevision = async () => {
+    if (!revComment.trim()) return;
+    setRevLoading(true);
+    setLabel("✍️ 修正指示を反映して再生成中…");
+    try {
+      const input = `【現在の台本】\n${session.finalScript}\n\n【ユーザーからの修正指示（最優先で反映）】\n${revComment}`;
+      const revRes = await callAPI("user_revision", input);
+      const newScript = extractBlock(revRes, "FINAL_START", "FINAL_END") || revRes;
+
+      setLabel("🧵📝 キャプション＆Threadsを作り直し中…");
+      const [thrRes, capRes] = await Promise.all([
+        callAPI("threads_master", newScript),
+        callAPI("caption_gen", newScript),
+      ]);
+      const newThreads = parseThreads(thrRes);
+      const newCaption = extractBlock(capRes, "CAPTION_START", "CAPTION_END") || capRes;
+
+      let s = addMsg(session, { agent: "writer", content: `【あなたの修正指示】${revComment}\n\n${revRes}` });
+      s = {
+        ...s,
+        finalScript: newScript,
+        finalThreads: newThreads.length > 0 ? newThreads : s.finalThreads,
+        caption: newCaption,
+        approved: false,
+      };
+      push(s);
+
+      // ライブラリも修正版で更新（進捗ステータス・実績メモは維持）
+      const existing = loadLibrary().find(i => i.id === s.id);
+      saveLibraryItem({
+        id: s.id, title: s.title, script: newScript,
+        threads: s.finalThreads, caption: newCaption,
+        status: existing?.status ?? "none",
+        createdAt: existing?.createdAt ?? Date.now(),
+        performance: existing?.performance,
+      });
+      setRevComment("");
+      setRevOpen(false);
+    } catch {
+      setLabel("");
+    }
+    setRevLoading(false);
     setLabel("");
   };
 
@@ -607,6 +661,41 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
               </div>
             </div>
             <LinkedText text={session.finalScript} className="p-4 text-sm text-gray-200 whitespace-pre-wrap leading-relaxed" />
+          </div>
+
+          {/* 確定 or 修正 */}
+          <div className="shrink-0 space-y-3">
+            <div className="flex gap-2">
+              <button onClick={approve} disabled={session.approved || revLoading}
+                className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-colors ${
+                  session.approved
+                    ? "bg-green-900/40 text-green-400 border border-green-600/30"
+                    : "bg-green-600 hover:bg-green-500 text-white"
+                }`}>
+                {session.approved ? "✅ 確定済み（Threads予約完了）" : "✅ このまま使う"}
+              </button>
+              <button onClick={() => setRevOpen(!revOpen)} disabled={revLoading}
+                className="flex-1 py-2.5 text-sm font-bold rounded-xl border border-yellow-600/50 text-yellow-400 hover:bg-yellow-900/20 transition-colors">
+                ✏️ 修正を入れる {revOpen ? "▲" : "▼"}
+              </button>
+            </div>
+
+            {revOpen && (
+              <div className="border border-yellow-600/30 bg-gray-900 rounded-2xl p-4 space-y-3">
+                <p className="text-xs text-gray-400">修正してほしい点を自由に書いてください。台本作成者があなたの指示を最優先で反映し、キャプション・Threadsも作り直します。</p>
+                <textarea value={revComment} onChange={e => setRevComment(e.target.value)} rows={3}
+                  placeholder="例：フックが弱いので具体的な金額を入れて／もっと初心者向けの言葉にして／30秒に短縮して"
+                  className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-yellow-600/50" />
+                {revLoading ? (
+                  <div className="py-1"><Spinner label={label} /></div>
+                ) : (
+                  <button onClick={submitRevision} disabled={!revComment.trim()}
+                    className="w-full py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40 text-black text-sm font-bold rounded-xl transition-colors">
+                    🔁 この指示で再生成する
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* キャプション */}
