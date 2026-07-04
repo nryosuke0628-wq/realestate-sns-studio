@@ -132,6 +132,45 @@ export function allocateCues(captions: string[], segments: Segment[]): Cue[] {
   return cues;
 }
 
+// 元動画タイムラインの時刻 → 発話タイムライン（カット後）の時刻
+export function originalToSpeechTime(t: number, segments: Segment[]): number {
+  let acc = 0;
+  for (const s of segments) {
+    if (t <= s.start) return acc;
+    if (t < s.end) return acc + (t - s.start);
+    acc += s.end - s.start;
+  }
+  return acc;
+}
+
+// AI（Gemini）が実測した各行の発話タイミングからCueを構築。
+// タイミングが欠けた行は「日本語の話速 ≒ 7文字/秒」で推定補完
+export function cuesFromTimings(
+  captions: string[],
+  timings: ({ start: number; end: number } | undefined)[],
+  segments: Segment[],
+): Cue[] {
+  const total = segments.reduce((sum, s) => sum + (s.end - s.start), 0);
+  const cues: Cue[] = [];
+  let prevEnd = 0;
+  for (let i = 0; i < captions.length; i++) {
+    const t = timings[i];
+    let start: number, end: number;
+    if (t && t.end > t.start) {
+      start = Math.max(originalToSpeechTime(t.start, segments), prevEnd);
+      end = Math.max(originalToSpeechTime(t.end, segments), start + 0.5);
+    } else {
+      start = prevEnd;
+      end = start + Math.max(0.7, captions[i].length / 7);
+    }
+    start = Math.min(start, total);
+    end = Math.min(end, total);
+    if (end > start) cues.push({ start, end, text: captions[i] });
+    prevEnd = end;
+  }
+  return cues;
+}
+
 // 発話タイムラインの時刻 → 元動画タイムラインの時刻
 export function speechTimeToOriginal(t: number, segments: Segment[]): number {
   let remaining = t;

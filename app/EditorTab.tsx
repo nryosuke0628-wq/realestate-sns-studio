@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Segment, Cue, extractNarration, splitForCaptions,
   detectSpeechSegments, allocateCues, generateSRT, generateCutSheet,
-  subtractRanges, encodeWav16k,
+  subtractRanges, encodeWav16k, cuesFromTimings,
 } from "@/lib/video";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
@@ -29,6 +29,20 @@ const CORE_URL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
 
 type Phase = "idle" | "analyzing" | "ready" | "rendering" | "done" | "error";
 type CaptionLang = "ja" | "zh" | "both";
+type StyleKey = "classic" | "white" | "center" | "pop" | "karaoke";
+
+// テロップスタイルプリセット（バズってる独り語りリールの型）
+const STYLES: Record<StyleKey, {
+  label: string; desc: string;
+  y: string; fontsize: number; hookSize: number;
+  color: string; hookColor: string; box?: string;
+}> = {
+  classic: { label: "定番",       desc: "下テロップ・白＋フック黄",     y: "h-th-170",   fontsize: 46, hookSize: 58, color: "white",    hookColor: "yellow" },
+  white:   { label: "白オンリー", desc: "色なしシンプル・フックは大",   y: "h-th-170",   fontsize: 46, hookSize: 60, color: "white",    hookColor: "white" },
+  center:  { label: "センター",   desc: "画面中央に特大文字",           y: "(h-th)/2",   fontsize: 50, hookSize: 64, color: "white",    hookColor: "yellow" },
+  pop:     { label: "ビビッド",   desc: "ピンク＋黒カード背景",         y: "h-th-190",   fontsize: 46, hookSize: 58, color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=16" },
+  karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",     y: "h-th-120",   fontsize: 44, hookSize: 56, color: "0x7DE8FF", hookColor: "0x7DE8FF" },
+};
 
 export default function EditorTab() {
   const [scripts, setScripts] = useState<StoredScript[]>([]);
@@ -53,6 +67,10 @@ export default function EditorTab() {
   const [directing, setDirecting] = useState(false);
   const [directorAdvice, setDirectorAdvice] = useState("");
   const [removedCount, setRemovedCount] = useState(0);
+  const [lineTimings, setLineTimings] = useState<({ start: number; end: number } | undefined)[] | null>(null);
+  // スタイル・仕上げ
+  const [style, setStyle] = useState<StyleKey>("classic");
+  const [audioClean, setAudioClean] = useState(true);
   const ffmpegRef = useRef<unknown>(null);
   const audioRef = useRef<{ channel: Float32Array; sampleRate: number } | null>(null);
 
@@ -64,7 +82,7 @@ export default function EditorTab() {
   // ① 動画の音声を解析して無音区間を検出
   const analyze = async (f: File) => {
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
-    setDirectorAdvice(""); setRemovedCount(0);
+    setDirectorAdvice(""); setRemovedCount(0); setLineTimings(null);
     try {
       const buf = await f.arrayBuffer();
       const ctx = new AudioContext();
@@ -83,13 +101,14 @@ export default function EditorTab() {
     }
   };
 
-  // ナレーション・区間が変わったらテロップ割り付けを再計算
+  // ナレーション・区間・実測タイミングが変わったらテロップ割り付けを再計算
   useEffect(() => {
     if (segments.length === 0 || !narration.trim()) { setCaptions([]); setCues([]); return; }
     const caps = splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean));
     setCaptions(caps);
-    setCues(allocateCues(caps, segments));
-  }, [narration, segments]);
+    // AI監督の実測タイミングがあれば優先、なければ文字数比例で推定
+    setCues(lineTimings ? cuesFromTimings(caps, lineTimings, segments) : allocateCues(caps, segments));
+  }, [narration, segments, lineTimings]);
 
   const keptDuration = segments.reduce((s, x) => s + (x.end - x.start), 0);
 
@@ -135,13 +154,19 @@ export default function EditorTab() {
       const res = await fetch("/api/video-director", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio: b64, narration }),
+        body: JSON.stringify({ audio: b64, narration, captions }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (data.remove.length > 0) {
         setSegments(prev => subtractRanges(prev, data.remove));
         setRemovedCount(data.remove.length);
+      }
+      // 各テロップ行の実測タイミングを反映（字幕精度が推定→実測に上がる）
+      if (Array.isArray(data.lines) && data.lines.length > 0) {
+        const timings: ({ start: number; end: number } | undefined)[] = [];
+        for (const l of data.lines) timings[l.index] = { start: l.start, end: l.end };
+        setLineTimings(timings);
       }
       setDirectorAdvice(data.advice || (data.remove.length === 0 ? "問題なし！このまま編集してOKです" : ""));
     } catch (e) {
@@ -194,7 +219,7 @@ export default function EditorTab() {
         if (lang !== "ja" && zhLines[i]) await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhLines[i]));
       }
 
-      // フィルタグラフ：trim+concat → scale → 画面中央テロップ（フックは大きく黄色）
+      // フィルタグラフ：trim+concat → 9:16クロップ＋30fps → スタイル別テロップ
       const N = segments.length;
       const trims = segments.map((s, i) =>
         `[0:v]trim=start=${s.start.toFixed(3)}:end=${s.end.toFixed(3)},setpts=PTS-STARTPTS[v${i}];` +
@@ -202,34 +227,51 @@ export default function EditorTab() {
       ).join("");
       const concatInputs = segments.map((_, i) => `[v${i}][a${i}]`).join("");
 
+      const st = STYLES[style];
       const drawParts: string[] = [];
       for (let i = 0; i < cues.length; i++) {
         const c = cues[i];
-        const isHook = c.start < 3; // 冒頭フックは大きく・黄色で強調
+        const isHook = c.start < 3; // 冒頭フックは大きく強調
         const enable = `enable=between(t\\,${c.start.toFixed(2)}\\,${c.end.toFixed(2)})`;
-        const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2`;
+        const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
+        const size = isHook ? st.hookSize : st.fontsize;
+        const color = isHook ? st.hookColor : st.color;
         if (lang === "ja") {
-          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${isHook ? 64 : 50}:fontcolor=${isHook ? "yellow" : "white"}:y=(h-th)/2:${enable}`);
+          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}:${enable}`);
         } else if (lang === "zh") {
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${isHook ? 64 : 50}:fontcolor=${isHook ? "yellow" : "white"}:y=(h-th)/2:${enable}`);
+          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}:${enable}`);
         } else {
-          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${isHook ? 58 : 48}:fontcolor=${isHook ? "yellow" : "white"}:y=(h-th)/2-42:${enable}`);
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=34:fontcolor=white@0.95:y=(h-th)/2+40:${enable}`);
+          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${Math.round(size * 0.94)}:fontcolor=${color}:y=${st.y}-42:${enable}`);
+          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=32:fontcolor=white@0.95:y=${st.y}+40:${enable}`);
         }
       }
+      // 横撮り・スクエアでも中央を切り出して縦9:16（720x1280）30fpsに統一
+      const normalize = `crop='min(iw,ih*9/16)':ih,scale=720:1280,fps=30`;
       const graph =
         `${trims}${concatInputs}concat=n=${N}:v=1:a=1[vc][ac];` +
-        `[vc]scale=-2:1280${drawParts.length ? "," + drawParts.join(",") : ""}[vo]`;
+        `[vc]${normalize}${drawParts.length ? "," + drawParts.join(",") : ""}[vo]`;
+      // 音声クリーンアップ：ノイズ除去＋音量正規化（リール標準の-16LUFS）
+      const audioGraph = audioClean ? `;[ac]afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11[ao]` : "";
+      const audioMap = audioClean ? "[ao]" : "[ac]";
 
       setStatusMsg("編集中…（動画の長さの2〜5倍の時間がかかります）");
-      await ffmpeg.exec([
+      const baseArgs = (g: string, amap: string) => [
         "-i", "input.mp4",
-        "-filter_complex", graph,
-        "-map", "[vo]", "-map", "[ac]",
+        "-filter_complex", g,
+        "-map", "[vo]", "-map", amap,
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
         "-c:a", "aac", "-b:a", "128k",
         "output.mp4",
-      ]);
+      ];
+      const code = await ffmpeg.exec(baseArgs(graph + audioGraph, audioMap));
+      if (code !== 0 && audioClean) {
+        // 音声フィルタ非対応環境ではクリーンアップなしで再試行
+        setStatusMsg("音声フィルタ非対応のため再試行中…");
+        const retry = await ffmpeg.exec(baseArgs(graph, "[ac]"));
+        if (retry !== 0) throw new Error("動画の書き出しに失敗しました");
+      } else if (code !== 0) {
+        throw new Error("動画の書き出しに失敗しました");
+      }
 
       const data = await ffmpeg.readFile("output.mp4");
       const bytes = new Uint8Array(data as Uint8Array);
@@ -319,6 +361,7 @@ export default function EditorTab() {
                 {directing ? "🧠 AI監督が視聴中…（30秒ほど）" : "🧠 AI監督チェック（言い淀み・噛みを自動検出してカット）"}
               </button>
               {removedCount > 0 && <p className="text-xs text-blue-300">✂️ AI監督が{removedCount}箇所の言い淀み・NG部分を追加カットしました</p>}
+              {lineTimings && <p className="text-xs text-blue-300">🎯 テロップのタイミングを実測値に合わせました（精度UP）</p>}
               {directorAdvice && <p className="text-xs text-gray-400">💬 監督コメント：{directorAdvice}</p>}
             </div>
           ) : (
@@ -331,6 +374,22 @@ export default function EditorTab() {
       {phase !== "idle" && phase !== "analyzing" && segments.length > 0 && (
         <div className="border border-yellow-600/40 bg-yellow-900/10 rounded-2xl p-4 space-y-3">
           <p className="text-sm font-bold text-yellow-400">③ 書き出し</p>
+
+          {/* テロップスタイル選択 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500">スタイル：</span>
+            {(Object.keys(STYLES) as StyleKey[]).map(k => (
+              <button key={k} onClick={() => setStyle(k)} title={STYLES[k].desc}
+                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${style === k ? "border-yellow-600 bg-yellow-900/30 text-yellow-400" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+                {STYLES[k].label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-600">{STYLES[style].desc} ／ 出力は縦9:16・720×1280・30fpsに自動整形</p>
+          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-yellow-500" />
+            🎤 音声クリーンアップ（ノイズ除去＋音量をリール標準に正規化）
+          </label>
 
           <button onClick={render} disabled={phase === "rendering" || (lang !== "ja" && zhLines.length === 0)}
             className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
