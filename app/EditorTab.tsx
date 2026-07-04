@@ -379,32 +379,32 @@ export default function EditorTab() {
 
   const langBtn = (v: CaptionLang, label: string) => (
     <button onClick={() => setLang(v)}
-      className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${lang === v ? "border-yellow-600 bg-yellow-900/30 text-yellow-400" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+      className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${lang === v ? "border-[#0fa793] bg-[#0fa793]/30 text-[#2fd4be]" : "border-[#333a63] text-gray-400 hover:border-[#0fa793]/70"}`}>
       {label}
     </button>
   );
 
   return (
-    <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-5 max-w-3xl">
+    <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-5 max-w-3xl">
       <p className="text-sm text-gray-400 leading-relaxed">
-        撮影動画をアップ → <span className="text-yellow-400">AI監督が言い淀みをチェック → 無音カット → 画面中央テロップ（日/中/2段組）</span>まで全自動。完成MP4はそのままインスタ投稿OK、微調整したい時はSRTをCapCutへ
+        撮影動画をアップ → <span className="text-[#2fd4be]">AI監督が言い淀みをチェック → 無音カット → 画面中央テロップ（日/中/2段組）</span>まで全自動。完成MP4はそのままインスタ投稿OK、微調整したい時はSRTをCapCutへ
       </p>
 
       {/* STEP 1: 台本選択 */}
-      <div className="border border-gray-800 bg-gray-900 rounded-2xl p-4 space-y-3">
+      <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-4 space-y-3">
         <p className="text-sm font-bold text-gray-200">① テロップにする台本を選ぶ</p>
         <select
           onChange={e => {
             const s = scripts.find(x => x.id === e.target.value);
             if (s) { setNarration(extractNarration(s.script).join("\n")); setZhLines([]); setZhHashtags(""); }
           }}
-          className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-xl p-2.5 focus:outline-none focus:border-yellow-600/50">
+          className="w-full bg-[#232849] border border-[#333a63] text-gray-200 text-sm rounded-xl p-2.5 focus:outline-none focus:border-[#0fa793]/50">
           <option value="">ライブラリから選択…</option>
           {scripts.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
         </select>
         <textarea value={narration} onChange={e => { setNarration(e.target.value); setZhLines([]); }} rows={5}
           placeholder="またはナレーションを直接貼り付け（1行＝テロップ1枚の目安）"
-          className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-yellow-600/50" />
+          className="w-full bg-[#232849] border border-[#333a63] text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#0fa793]/50" />
 
         {/* テロップ言語 */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -420,7 +420,7 @@ export default function EditorTab() {
           )}
         </div>
         {lang !== "ja" && zhLines.length > 0 && (
-          <div className="text-xs text-gray-400 bg-gray-800/60 rounded-xl p-3 space-y-1">
+          <div className="text-xs text-gray-400 bg-[#232849]/60 rounded-xl p-3 space-y-1">
             <p className="text-green-400">✅ 中国語テロップ {zhLines.length}行 生成済み</p>
             {zhHashtags && <p className="text-red-300">中華圏向けタグ： {zhHashtags}</p>}
           </div>
@@ -428,11 +428,11 @@ export default function EditorTab() {
       </div>
 
       {/* STEP 2: 動画アップロード */}
-      <div className="border border-gray-800 bg-gray-900 rounded-2xl p-4 space-y-3">
+      <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-4 space-y-3">
         <p className="text-sm font-bold text-gray-200">② 撮影した動画を選ぶ</p>
         <input type="file" accept="video/*"
           onChange={e => { const f = e.target.files?.[0]; if (f) analyze(f); }}
-          className="block w-full text-sm text-gray-400 file:mr-3 file:px-4 file:py-2 file:rounded-xl file:border-0 file:bg-yellow-600 file:text-black file:font-bold file:text-xs hover:file:bg-yellow-500" />
+          className="block w-full text-sm text-gray-400 file:mr-3 file:px-4 file:py-2 file:rounded-xl file:border-0 file:bg-[#0fa793] file:text-white file:font-bold file:text-xs hover:file:bg-[#12bfa8]" />
         {phase === "analyzing" && <p className="text-xs text-gray-500">🔍 音声を解析中…</p>}
         {segments.length > 0 && (
           <p className="text-xs text-green-400">
@@ -446,7 +446,7 @@ export default function EditorTab() {
           <p className="text-xs text-gray-600">💡 GEMINI_API_KEYを設定すると、AI監督カット＋品質QAループが自動実行されます</p>
         )}
         {qaLog.length > 0 && (
-          <div className="bg-gray-800/60 border border-blue-900/40 rounded-xl p-3 space-y-1">
+          <div className="bg-[#232849]/60 border border-blue-900/40 rounded-xl p-3 space-y-1">
             {qaLog.map((m, i) => (
               <p key={i} className="text-xs text-gray-300">{m}</p>
             ))}
@@ -490,27 +490,27 @@ export default function EditorTab() {
 
       {/* STEP 3: 出力 */}
       {phase !== "idle" && phase !== "analyzing" && segments.length > 0 && (
-        <div className="border border-yellow-600/40 bg-yellow-900/10 rounded-2xl p-4 space-y-3">
-          <p className="text-sm font-bold text-yellow-400">③ 書き出し</p>
+        <div className="border border-[#0fa793]/40 bg-[#0fa793]/10 rounded-2xl p-4 space-y-3">
+          <p className="text-sm font-bold text-[#2fd4be]">③ 書き出し</p>
 
           {/* テロップスタイル選択 */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-500">スタイル：</span>
             {(Object.keys(STYLES) as StyleKey[]).map(k => (
               <button key={k} onClick={() => setStyle(k)} title={STYLES[k].desc}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${style === k ? "border-yellow-600 bg-yellow-900/30 text-yellow-400" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${style === k ? "border-[#0fa793] bg-[#0fa793]/30 text-[#2fd4be]" : "border-[#333a63] text-gray-400 hover:border-[#0fa793]/70"}`}>
                 {STYLES[k].label}
               </button>
             ))}
           </div>
           <p className="text-xs text-gray-600">{STYLES[style].desc} ／ 出力は縦9:16・720×1280・30fpsに自動整形</p>
           <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-yellow-500" />
+            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-teal-500" />
             🎤 音声クリーンアップ（ノイズ除去＋音量をリール標準に正規化）
           </label>
 
           <button onClick={render} disabled={phase === "rendering" || qaRunning || (lang !== "ja" && zhLines.length === 0)}
-            className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+            className="w-full py-3 bg-[#0fa793] hover:bg-[#2fd4be] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
             {phase === "rendering" ? `処理中… ${progress}%` : qaRunning ? "自動QA完了までお待ちください…" : "🎬 書き出す（QA合格済みの内容で）"}
           </button>
           {lang !== "ja" && zhLines.length === 0 && (
@@ -518,8 +518,8 @@ export default function EditorTab() {
           )}
           {phase === "rendering" && (
             <div>
-              <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-yellow-500 transition-all" style={{ width: `${progress}%` }} />
+              <div className="h-2 bg-[#232849] rounded-full overflow-hidden">
+                <div className="h-full bg-[#2fd4be] transition-all" style={{ width: `${progress}%` }} />
               </div>
               <p className="text-xs text-gray-500 mt-1.5">{statusMsg}</p>
             </div>
@@ -538,11 +538,11 @@ export default function EditorTab() {
           <div className="flex flex-wrap gap-2 pt-1">
             <button onClick={() => download("captions.srt", generateSRT(srtCues(), segments, true))}
               disabled={cues.length === 0}
-              className="flex-1 min-w-[140px] py-2 text-xs border border-gray-700 hover:border-gray-500 text-gray-300 rounded-xl disabled:opacity-40 transition-colors">
+              className="flex-1 min-w-[140px] py-2 text-xs border border-[#333a63] hover:border-[#0fa793]/70 text-gray-300 rounded-xl disabled:opacity-40 transition-colors">
               📄 SRT字幕（CapCut微調整用）
             </button>
             <button onClick={() => download("cutsheet.txt", generateCutSheet(segments, duration))}
-              className="flex-1 min-w-[140px] py-2 text-xs border border-gray-700 hover:border-gray-500 text-gray-300 rounded-xl transition-colors">
+              className="flex-1 min-w-[140px] py-2 text-xs border border-[#333a63] hover:border-[#0fa793]/70 text-gray-300 rounded-xl transition-colors">
               ✂️ カット指示書
             </button>
           </div>

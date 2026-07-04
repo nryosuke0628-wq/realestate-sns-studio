@@ -213,7 +213,7 @@ function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-      className="text-xs px-2 py-0.5 rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors">
+      className="text-xs px-2 py-0.5 rounded border border-[#333a63] text-gray-400 hover:text-gray-200 hover:border-[#0fa793]/70 transition-colors">
       {copied ? "✓ コピー済" : "コピー"}
     </button>
   );
@@ -233,16 +233,16 @@ function Spinner({ label }: { label: string }) {
 
 const AGENT_META: Record<AgentMessage["agent"], { name: string; emoji: string; color: string }> = {
   trend:      { name: "トレンド収集",       emoji: "🌐", color: "border-blue-600/30 bg-blue-950/20" },
-  idea:       { name: "ネタ案",             emoji: "💡", color: "border-yellow-600/30 bg-yellow-950/20" },
-  draft:      { name: "台本作成者（初稿）",  emoji: "✍️", color: "border-gray-600/30 bg-gray-800/40" },
+  idea:       { name: "ネタ案",             emoji: "💡", color: "border-[#0fa793]/30 bg-[#0e7a6c]/20" },
+  draft:      { name: "台本作成者（初稿）",  emoji: "✍️", color: "border-gray-600/30 bg-[#232849]/40" },
   realestate: { name: "不動産専門家上司",   emoji: "🏢", color: "border-red-600/30 bg-red-950/20" },
   sns:        { name: "SNSコンサル上司",    emoji: "📱", color: "border-purple-600/30 bg-purple-950/20" },
   writer:     { name: "台本作成者（改訂）",  emoji: "✍️", color: "border-green-600/30 bg-green-950/20" },
-  final:      { name: "🏆 完成台本",        emoji: "🏆", color: "border-yellow-500/50 bg-yellow-900/20" },
+  final:      { name: "🏆 完成台本",        emoji: "🏆", color: "border-[#2fd4be]/50 bg-[#0fa793]/20" },
 };
 
 function AgentBubble({ msg }: { msg: AgentMessage }) {
-  const meta = AGENT_META[msg.agent] ?? { name: msg.agent, emoji: "🤖", color: "border-gray-600/30 bg-gray-800/40" };
+  const meta = AGENT_META[msg.agent] ?? { name: msg.agent, emoji: "🤖", color: "border-gray-600/30 bg-[#232849]/40" };
   const [expanded, setExpanded] = useState(false);
   const isLong = msg.content.length > 500;
   const preview = isLong && !expanded ? msg.content.slice(0, 400) + "…" : msg.content;
@@ -255,7 +255,7 @@ function AgentBubble({ msg }: { msg: AgentMessage }) {
         <div className="flex gap-1">
           {isLong && (
             <button onClick={() => setExpanded(!expanded)}
-              className="text-xs text-gray-500 hover:text-gray-300 px-1.5 py-0.5 rounded border border-gray-700">
+              className="text-xs text-gray-500 hover:text-gray-300 px-1.5 py-0.5 rounded border border-[#333a63]">
               {expanded ? "折りたたむ" : "全文表示"}
             </button>
           )}
@@ -310,7 +310,7 @@ function ThreadsPanel({ posts }: { posts: string[] }) {
           const clean = post.replace(/^【投稿\d+[^】]*】\n?/, "").replace(/\（約\d+文字\）/, "").trim();
           const status = statuses[i] ?? "idle";
           return (
-            <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-3">
+            <div key={i} className="bg-[#181b30] border border-[#262b4a] rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-orange-400/70">投稿 {i + 1}</span>
                 <div className="flex items-center gap-2">
@@ -319,7 +319,7 @@ function ThreadsPanel({ posts }: { posts: string[] }) {
                     className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors ${
                       status === "done" ? "bg-green-900/40 text-green-400 border border-green-600/30" :
                       status === "error" ? "bg-red-900/40 text-red-400 border border-red-600/30" :
-                      status === "posting" ? "bg-gray-700 text-gray-400" :
+                      status === "posting" ? "bg-[#2c3255] text-gray-400" :
                       "bg-orange-600 hover:bg-orange-500 text-white"
                     }`}>
                     {status === "done" ? "✅ 済み" : status === "posting" ? "投稿中…" : status === "error" ? "❌ 再試行" : "投稿する"}
@@ -359,8 +359,8 @@ function ProgressSteps({ step }: { step: DebateStep }) {
         return (
           <span key={key} className={`text-xs px-2.5 py-1 rounded-full border ${
             done   ? "border-green-600/50 bg-green-900/20 text-green-400" :
-            active ? "border-yellow-500/50 bg-yellow-900/20 text-yellow-400 animate-pulse" :
-                     "border-gray-700 text-gray-600"
+            active ? "border-[#2fd4be]/50 bg-[#0fa793]/20 text-[#2fd4be] animate-pulse" :
+                     "border-[#333a63] text-gray-600"
           }`}>
             {done ? "✓ " : active ? "▶ " : ""}{label}
           </span>
@@ -377,27 +377,27 @@ function IdeaCard({ idea, index, onSelect, onBookmark, bookmarked }: {
   const title = extractIdeaTitle(idea);
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="border border-gray-700 bg-gray-900 rounded-2xl p-4 flex flex-col gap-3 hover:border-yellow-600/40 transition-colors">
+    <div className="border border-[#333a63] bg-[#181b30] rounded-2xl p-4 flex flex-col gap-3 hover:border-[#0fa793]/40 transition-colors">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <span className="text-xs font-bold text-yellow-500 mb-1 block">案 {index + 1}</span>
+          <span className="text-xs font-bold text-[#14b8a6] mb-1 block">案 {index + 1}</span>
           <p className="text-sm font-semibold text-gray-100 leading-snug">{title}</p>
         </div>
         <button onClick={onBookmark} title={bookmarked ? "保留済み" : "保留に追加"}
-          className={`shrink-0 text-xl transition-colors ${bookmarked ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"}`}>
+          className={`shrink-0 text-xl transition-colors ${bookmarked ? "text-[#2fd4be]" : "text-gray-600 hover:text-[#2fd4be]"}`}>
           {bookmarked ? "★" : "☆"}
         </button>
       </div>
       {expanded && (
-        <LinkedText text={idea} className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed border-t border-gray-800 pt-3" />
+        <LinkedText text={idea} className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed border-t border-[#262b4a] pt-3" />
       )}
       <div className="flex gap-2 mt-auto">
         <button onClick={() => setExpanded(!expanded)}
-          className="flex-1 text-xs py-2 border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-gray-200 rounded-xl transition-colors">
+          className="flex-1 text-xs py-2 border border-[#333a63] hover:border-[#0fa793]/70 text-gray-400 hover:text-gray-200 rounded-xl transition-colors">
           {expanded ? "閉じる ▲" : "詳細 ▼"}
         </button>
         <button onClick={onSelect}
-          className="flex-1 text-xs py-2 bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-xl transition-colors">
+          className="flex-1 text-xs py-2 bg-[#0fa793] hover:bg-[#12bfa8] text-white font-bold rounded-xl transition-colors">
           この案で作成
         </button>
       </div>
@@ -593,7 +593,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           <div className="text-5xl mb-4">🎬</div>
           <p className="text-sm text-gray-500 mb-6">AIチームがバズる台本を作り上げます</p>
           <button onClick={startDebate}
-            className="px-8 py-3 bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-2xl text-sm transition-colors">
+            className="px-8 py-3 bg-[#0fa793] hover:bg-[#12bfa8] text-white font-bold rounded-2xl text-sm transition-colors">
             🎬 ディスカッション開始
           </button>
           <p className="text-xs text-gray-600 mt-3">トレンド収集 → ネタ案3案 → 選択 → 討論 → 最終台本 → Threads</p>
@@ -604,7 +604,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
       {isGenIdeas && (
         <div className="flex flex-col items-center justify-center flex-1 gap-6 px-4">
           <ProgressSteps step={session.step} />
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 w-full max-w-md">
+          <div className="bg-[#181b30] border border-[#262b4a] rounded-xl p-4 w-full max-w-md">
             <Spinner label={label} />
           </div>
         </div>
@@ -613,7 +613,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
       {/* ネタ案選択 */}
       {isSelectingIdea && (
         <div className="flex flex-col flex-1 gap-4 overflow-y-auto output-scroll pb-4">
-          <p className="text-sm font-semibold text-yellow-400 shrink-0">
+          <p className="text-sm font-semibold text-[#2fd4be] shrink-0">
             💡 ネタ案を選んでください <span className="text-gray-500 font-normal text-xs ml-1">★で保留にも追加できます</span>
           </p>
           {session.ideas.length === 0 ? (
@@ -639,7 +639,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
       {isGenScript && (
         <div className="flex flex-col items-center justify-center flex-1 gap-6 px-4">
           <ProgressSteps step={session.step} />
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 w-full max-w-md">
+          <div className="bg-[#181b30] border border-[#262b4a] rounded-xl p-4 w-full max-w-md">
             <Spinner label={label} />
           </div>
         </div>
@@ -649,9 +649,9 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
       {isDone && (
         <div className="flex flex-col flex-1 gap-4 overflow-y-auto output-scroll pb-4">
           {/* 最終台本 */}
-          <div className="border border-yellow-500/40 bg-yellow-900/10 rounded-2xl overflow-hidden shrink-0">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-yellow-500/20">
-              <span className="font-bold text-yellow-400 text-sm">🏆 完成台本</span>
+          <div className="border border-[#2fd4be]/40 bg-[#0fa793]/10 rounded-2xl overflow-hidden shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#2fd4be]/20">
+              <span className="font-bold text-[#2fd4be] text-sm">🏆 完成台本</span>
               <div className="flex gap-2 items-center">
                 <button onClick={() => setPrompterOpen(true)}
                   className="text-xs px-2.5 py-1 rounded-lg border border-green-700/40 text-green-400 hover:border-green-500 transition-colors">
@@ -675,22 +675,22 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
                 {session.approved ? "✅ 確定済み（Threads予約完了）" : "✅ このまま使う"}
               </button>
               <button onClick={() => setRevOpen(!revOpen)} disabled={revLoading}
-                className="flex-1 py-2.5 text-sm font-bold rounded-xl border border-yellow-600/50 text-yellow-400 hover:bg-yellow-900/20 transition-colors">
+                className="flex-1 py-2.5 text-sm font-bold rounded-xl border border-[#0fa793]/50 text-[#2fd4be] hover:bg-[#0fa793]/20 transition-colors">
                 ✏️ 修正を入れる {revOpen ? "▲" : "▼"}
               </button>
             </div>
 
             {revOpen && (
-              <div className="border border-yellow-600/30 bg-gray-900 rounded-2xl p-4 space-y-3">
+              <div className="border border-[#0fa793]/30 bg-[#181b30] rounded-2xl p-4 space-y-3">
                 <p className="text-xs text-gray-400">修正してほしい点を自由に書いてください。台本作成者があなたの指示を最優先で反映し、キャプション・Threadsも作り直します。</p>
                 <textarea value={revComment} onChange={e => setRevComment(e.target.value)} rows={3}
                   placeholder="例：フックが弱いので具体的な金額を入れて／もっと初心者向けの言葉にして／30秒に短縮して"
-                  className="w-full bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-yellow-600/50" />
+                  className="w-full bg-[#232849] border border-[#333a63] text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#0fa793]/50" />
                 {revLoading ? (
                   <div className="py-1"><Spinner label={label} /></div>
                 ) : (
                   <button onClick={submitRevision} disabled={!revComment.trim()}
-                    className="w-full py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40 text-black text-sm font-bold rounded-xl transition-colors">
+                    className="w-full py-2.5 bg-[#0fa793] hover:bg-[#2fd4be] disabled:opacity-40 text-black text-sm font-bold rounded-xl transition-colors">
                     🔁 この指示で再生成する
                   </button>
                 )}
@@ -713,14 +713,14 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           {session.finalThreads.length > 0 && <ThreadsPanel posts={session.finalThreads} />}
 
           {/* 上司のやりとり（折りたたみ） */}
-          <div className="border border-gray-800 rounded-2xl overflow-hidden shrink-0">
+          <div className="border border-[#262b4a] rounded-2xl overflow-hidden shrink-0">
             <button onClick={() => setShowDebate(!showDebate)}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 transition-colors">
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-gray-200 hover:bg-[#232849]/50 transition-colors">
               <span>👥 上司のやりとりを{showDebate ? "隠す" : "見る"}</span>
               <span>{showDebate ? "▲" : "▼"}</span>
             </button>
             {showDebate && (
-              <div className="p-4 space-y-3 border-t border-gray-800">
+              <div className="p-4 space-y-3 border-t border-[#262b4a]">
                 {session.messages.map((msg, i) => <AgentBubble key={i} msg={msg} />)}
               </div>
             )}
@@ -778,10 +778,10 @@ function WeeklyTab({ goScript }: { goScript: () => void }) {
   };
 
   return (
-    <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
+    <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <button onClick={generate} disabled={loading}
-          className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+          className="px-6 py-2.5 bg-[#0fa793] hover:bg-[#2fd4be] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
           {loading ? "生成中…" : plan ? "📅 プランを作り直す" : "📅 今週のプランを生成"}
         </button>
         {plan && !loading && (
@@ -793,7 +793,7 @@ function WeeklyTab({ goScript }: { goScript: () => void }) {
       </div>
 
       {loading && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 max-w-md">
+        <div className="bg-[#181b30] border border-[#262b4a] rounded-xl p-4 max-w-md">
           <Spinner label={label} />
         </div>
       )}
@@ -808,14 +808,14 @@ function WeeklyTab({ goScript }: { goScript: () => void }) {
       {!loading && plan && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {plan.days.map((d, i) => (
-            <div key={i} className={`border rounded-2xl p-4 flex flex-col gap-3 ${d.scripted ? "border-green-600/40 bg-green-950/10" : "border-gray-700 bg-gray-900"}`}>
+            <div key={i} className={`border rounded-2xl p-4 flex flex-col gap-3 ${d.scripted ? "border-green-600/40 bg-green-950/10" : "border-[#333a63] bg-[#181b30]"}`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-yellow-500">{d.day || `${i + 1}本目`}</span>
+                <span className="text-xs font-bold text-[#14b8a6]">{d.day || `${i + 1}本目`}</span>
                 {d.scripted && <span className="text-xs text-green-400">✅ 台本化済み</span>}
               </div>
               <LinkedText text={d.idea} className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed flex-1" />
               <button onClick={() => makeScript(i)}
-                className={`text-xs py-2 font-bold rounded-xl transition-colors ${d.scripted ? "border border-gray-700 text-gray-500 hover:text-gray-300" : "bg-yellow-600 hover:bg-yellow-500 text-black"}`}>
+                className={`text-xs py-2 font-bold rounded-xl transition-colors ${d.scripted ? "border border-[#333a63] text-gray-500 hover:text-gray-300" : "bg-[#0fa793] hover:bg-[#12bfa8] text-white"}`}>
                 {d.scripted ? "もう一度台本化" : "🎬 台本化する"}
               </button>
             </div>
@@ -858,20 +858,20 @@ function ScriptTab() {
   const active = sessions.find(s => s.id === activeId);
 
   return (
-    <div className="flex h-[calc(100vh-96px)] relative overflow-hidden">
+    <div className="flex h-[calc(100vh-152px)] relative overflow-hidden">
       {/* モバイルオーバーレイ */}
       {sidebarOpen && <div className="fixed inset-0 bg-black/60 z-10 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* サイドバー */}
       <aside className={`
         absolute md:relative z-20 top-0 left-0 h-full
-        w-60 md:w-52 bg-[#0a0d12] border-r border-gray-800 flex flex-col shrink-0
+        w-60 md:w-52 bg-[#14172a] border-r border-[#262b4a] flex flex-col shrink-0
         transition-transform duration-200
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
       `}>
-        <div className="p-3 border-b border-gray-800 flex gap-2">
+        <div className="p-3 border-b border-[#262b4a] flex gap-2">
           <button onClick={createSession}
-            className="flex-1 py-2 bg-yellow-600 hover:bg-yellow-500 text-black text-xs font-bold rounded-lg transition-colors">
+            className="flex-1 py-2 bg-[#0fa793] hover:bg-[#12bfa8] text-white text-xs font-bold rounded-lg transition-colors">
             ＋ 新規
           </button>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-500 px-2 text-sm">✕</button>
@@ -880,7 +880,7 @@ function ScriptTab() {
           {sessions.length === 0 && <p className="text-xs text-gray-600 text-center py-4">チャットなし</p>}
           {sessions.map(s => (
             <div key={s.id} onClick={() => { setActiveId(s.id); setSidebarOpen(false); }}
-              className={`group flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${activeId === s.id ? "bg-gray-800 text-white" : "text-gray-400 hover:bg-gray-800/50"}`}>
+              className={`group flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${activeId === s.id ? "bg-[#232849] text-white" : "text-gray-400 hover:bg-[#232849]/50"}`}>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{s.title}</p>
                 <p className="text-xs text-gray-600">{s.step === "done" ? "✅ 完了" : s.step !== "idle" ? "生成中…" : ""}</p>
@@ -894,9 +894,9 @@ function ScriptTab() {
 
       {/* メイン */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 shrink-0">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#262b4a] shrink-0">
           <button onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-gray-500 hover:text-gray-300 text-sm px-2 py-1 rounded border border-gray-800 transition-colors shrink-0">☰</button>
+            className="text-gray-500 hover:text-gray-300 text-sm px-2 py-1 rounded border border-[#262b4a] transition-colors shrink-0">☰</button>
           {active && <span className="text-sm text-gray-400 truncate">{active.title}</span>}
         </div>
         <div className="flex-1 overflow-hidden px-3 pt-4">
@@ -906,7 +906,7 @@ function ScriptTab() {
             <div className="flex flex-col items-center justify-center h-full text-gray-600">
               <div className="text-5xl mb-4">🎬</div>
               <p className="text-sm mb-4">「新規」ボタンでチャットを作成</p>
-              <button onClick={createSession} className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-xl text-sm">＋ 新しいチャット</button>
+              <button onClick={createSession} className="px-6 py-2.5 bg-[#0fa793] hover:bg-[#12bfa8] text-white font-bold rounded-xl text-sm">＋ 新しいチャット</button>
             </div>
           )}
         </div>
@@ -930,7 +930,7 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
   const statuses: ProductionStatus[] = ["filming", "editing", "posted"];
 
   return (
-    <div className="border border-gray-800 bg-gray-900 rounded-2xl overflow-hidden">
+    <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl overflow-hidden">
       <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex-1 min-w-0">
@@ -947,7 +947,7 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
             const active = item.status === s;
             return (
               <button key={s} onClick={() => onStatus(item.id, active ? "none" : s)}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? `${cfg.active} border` : "border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600"}`}>
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? `${cfg.active} border` : "border-[#333a63] text-gray-500 hover:text-gray-300 hover:border-[#0fa793]/50"}`}>
                 {cfg.label}
               </button>
             );
@@ -961,13 +961,13 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
             defaultValue={item.performance ?? ""}
             onBlur={(e) => updateLibraryPerformance(item.id, e.target.value)}
             placeholder="実績を入力（例：再生1.2万・保存320）→ 次回生成でAIが学習"
-            className="w-full mb-3 bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-green-600/50 placeholder:text-gray-600"
+            className="w-full mb-3 bg-[#232849] border border-[#333a63] text-gray-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-green-600/50 placeholder:text-gray-600"
           />
         )}
 
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowScript(!showScript)}
-            className="flex-1 text-xs py-2 border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-gray-200 rounded-xl transition-colors">
+            className="flex-1 text-xs py-2 border border-[#333a63] hover:border-[#0fa793]/70 text-gray-400 hover:text-gray-200 rounded-xl transition-colors">
             {showScript ? "台本を閉じる ▲" : "台本を見る ▼"}
           </button>
           <button onClick={() => setPrompter(true)}
@@ -985,11 +985,11 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
       </div>
 
       {showScript && (
-        <div className="border-t border-gray-800 p-4">
+        <div className="border-t border-[#262b4a] p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={item.script} /></div>
           <LinkedText text={item.script} />
           {item.caption && (
-            <div className="mt-4 pt-4 border-t border-gray-800">
+            <div className="mt-4 pt-4 border-t border-[#262b4a]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-pink-400">📝 キャプション</span>
                 <CopyBtn text={item.caption} />
@@ -1001,7 +1001,7 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
       )}
 
       {showThreads && item.threads.length > 0 && (
-        <div className="border-t border-gray-800 p-4">
+        <div className="border-t border-[#262b4a] p-4">
           <ThreadsPanel posts={item.threads} />
         </div>
       )}
@@ -1038,7 +1038,7 @@ function ThreadsQueueSection() {
       <p className="text-xs text-gray-600 mb-3">毎日19:00に上から1件ずつ自動投稿されます</p>
       <div className="space-y-2">
         {items.map(q => (
-          <div key={q.id} className="flex items-center gap-3 border border-gray-800 bg-gray-900 rounded-xl px-4 py-3">
+          <div key={q.id} className="flex items-center gap-3 border border-[#262b4a] bg-[#181b30] rounded-xl px-4 py-3">
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-gray-200 truncate">{q.title}</p>
               <p className="text-xs text-gray-600">{q.posts.length}連投稿 ・ {new Date(q.created_at).toLocaleDateString("ja-JP")}</p>
@@ -1063,7 +1063,7 @@ function LibraryTab() {
   useEffect(() => { reload(); }, []);
 
   return (
-    <div className="overflow-y-auto output-scroll h-[calc(100vh-96px)] px-3 md:px-6 py-5 space-y-8">
+    <div className="overflow-y-auto output-scroll h-[calc(100vh-152px)] px-3 md:px-6 py-5 space-y-8">
       <ThreadsQueueSection />
       {/* 保留ネタ案 */}
       {bookmarks.length > 0 && (
@@ -1071,7 +1071,7 @@ function LibraryTab() {
           <h2 className="text-sm font-bold text-gray-200 mb-3">⭐ 保留ネタ案</h2>
           <div className="space-y-2">
             {bookmarks.map(b => (
-              <div key={b.id} className="border border-yellow-700/30 bg-yellow-900/10 rounded-xl p-3 flex items-start gap-3">
+              <div key={b.id} className="border border-[#0e7a6c]/30 bg-[#0fa793]/10 rounded-xl p-3 flex items-start gap-3">
                 <LinkedText text={b.idea} className="text-xs text-gray-300 whitespace-pre-wrap flex-1 leading-relaxed" />
                 <button onClick={() => { deleteBookmark(b.id); setBookmarks(loadBookmarks()); }}
                   className="text-gray-600 hover:text-red-500 text-xs shrink-0 mt-0.5">✕</button>
@@ -1118,11 +1118,11 @@ function FollowerChart({ history }: { history: { followers: number; created_at: 
   }).join(" ");
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40">
-      <polyline points={pts} fill="none" stroke="#d4af37" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={pts} fill="none" stroke="#0fa793" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       {history.map((h, i) => {
         const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
         const y = H - PAD - ((h.followers - min) / range) * (H - PAD * 2);
-        return <circle key={i} cx={x} cy={y} r="3" fill="#d4af37" />;
+        return <circle key={i} cx={x} cy={y} r="3" fill="#0fa793" />;
       })}
     </svg>
   );
@@ -1140,14 +1140,14 @@ function DashboardTab() {
 
   if (!data?.connected) {
     return (
-      <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-8 max-w-2xl">
+      <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-8 max-w-2xl">
         <div className="text-4xl mb-4">📈</div>
         <h2 className="text-lg font-bold text-gray-100 mb-2">Instagram連携でダッシュボードが有効になります</h2>
         <p className="text-sm text-gray-400 mb-6 leading-relaxed">
           連携すると：フォロワー推移の自動記録 / 1万人達成日の予測 / 投稿ごとの再生・保存数の自動取得 / AIが実測データから学習してネタ精度が上がる
         </p>
-        <div className="border border-gray-800 bg-gray-900 rounded-2xl p-5 space-y-4 text-sm text-gray-300">
-          <p className="font-bold text-yellow-400">セットアップ手順（約10分）</p>
+        <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-5 space-y-4 text-sm text-gray-300">
+          <p className="font-bold text-[#2fd4be]">セットアップ手順（約10分）</p>
           <ol className="list-decimal list-inside space-y-2 leading-relaxed">
             <li>Instagramアプリ → 設定 → 「プロアカウントに切り替え」（無料）</li>
             <li>Facebookページを作成し、Instagramと連携（Meta Business Suite）</li>
@@ -1166,44 +1166,44 @@ function DashboardTab() {
   const pct = Math.min(100, (current / goal) * 100);
 
   return (
-    <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-6">
+    <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-6">
       {/* 1万人ゴール */}
-      <div className="border border-yellow-600/40 bg-yellow-900/10 rounded-2xl p-5">
+      <div className="border border-[#0fa793]/40 bg-[#0fa793]/10 rounded-2xl p-5">
         <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
           <div>
             <p className="text-xs text-gray-500 mb-1">現在のフォロワー</p>
-            <p className="text-3xl font-black text-yellow-400">{current.toLocaleString()}<span className="text-sm text-gray-500 font-normal ml-2">/ {goal.toLocaleString()}人</span></p>
+            <p className="text-3xl font-black text-[#2fd4be]">{current.toLocaleString()}<span className="text-sm text-gray-500 font-normal ml-2">/ {goal.toLocaleString()}人</span></p>
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-500">1日平均 <span className="text-green-400 font-bold">+{data.dailyGrowth ?? 0}</span></p>
             {data.projectedDate && (
-              <p className="text-xs text-gray-400 mt-1">📅 達成予測：<span className="text-yellow-400 font-bold">{new Date(data.projectedDate).toLocaleDateString("ja-JP")}</span></p>
+              <p className="text-xs text-gray-400 mt-1">📅 達成予測：<span className="text-[#2fd4be] font-bold">{new Date(data.projectedDate).toLocaleDateString("ja-JP")}</span></p>
             )}
           </div>
         </div>
-        <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-2.5 bg-[#232849] rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-[#0fa793] to-[#2fd4be] rounded-full transition-all" style={{ width: `${pct}%` }} />
         </div>
         <p className="text-xs text-gray-600 mt-1.5">{pct.toFixed(1)}% 達成</p>
       </div>
 
       {/* フォロワー推移 */}
-      <div className="border border-gray-800 bg-gray-900 rounded-2xl p-5">
+      <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-5">
         <p className="text-sm font-bold text-gray-200 mb-2">📈 フォロワー推移</p>
         <FollowerChart history={data.history ?? []} />
       </div>
 
       {/* 投稿パフォーマンス */}
-      <div className="border border-gray-800 bg-gray-900 rounded-2xl p-5">
+      <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-5">
         <p className="text-sm font-bold text-gray-200 mb-3">🎬 投稿パフォーマンス（自動取得）</p>
         {(data.media ?? []).length === 0 ? (
           <p className="text-xs text-gray-600 py-4 text-center">明朝の自動取得後に表示されます</p>
         ) : (
           <div className="space-y-2">
             {(data.media ?? []).map(m => (
-              <div key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border border-gray-800 rounded-xl px-4 py-3">
+              <div key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border border-[#262b4a] rounded-xl px-4 py-3">
                 <a href={m.permalink ?? "#"} target="_blank" rel="noopener noreferrer"
-                  className="flex-1 min-w-[180px] text-xs text-gray-300 hover:text-yellow-400 truncate transition-colors">
+                  className="flex-1 min-w-[180px] text-xs text-gray-300 hover:text-[#2fd4be] truncate transition-colors">
                   {(m.caption ?? "（キャプションなし）").slice(0, 40)}
                 </a>
                 <span className="text-xs text-gray-500">▶ {m.views?.toLocaleString() ?? "-"}</span>
@@ -1225,13 +1225,13 @@ function NewsTab() {
   const [output, setOutput] = useState("");
   const run = async () => { setLoading(true); setOutput(""); setOutput(await callAPI("news_realestate")); setLoading(false); };
   return (
-    <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
+    <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
       <button onClick={run} disabled={loading}
-        className="mb-4 px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+        className="mb-4 px-6 py-2.5 bg-[#0fa793] hover:bg-[#2fd4be] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
         {loading ? "生成中…" : "🗞 今日の時事ネタ×不動産を生成"}
       </button>
       {output && (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+        <div className="bg-[#181b30] border border-[#262b4a] rounded-2xl p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={output} /></div>
           <LinkedText text={output} />
         </div>
@@ -1248,24 +1248,24 @@ function AnalyzeTab() {
   const [output, setOutput] = useState("");
   const run = async () => { if (!input.trim()) return; setLoading(true); setOutput(""); setOutput(await callAPI(mode === "buzz" ? "buzz_analyze" : "data_analyze", input)); setLoading(false); };
   return (
-    <div className="h-[calc(100vh-96px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
+    <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
       <div className="flex gap-2 mb-4">
         {(["buzz", "data"] as AnalyzeMode[]).map(m => (
           <button key={m} onClick={() => setMode(m)}
-            className={`px-4 py-1.5 text-sm rounded-full border transition-colors ${mode === m ? "border-yellow-600 bg-yellow-900/30 text-yellow-400" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+            className={`px-4 py-1.5 text-sm rounded-full border transition-colors ${mode === m ? "border-[#0fa793] bg-[#0fa793]/30 text-[#2fd4be]" : "border-[#333a63] text-gray-400 hover:border-[#0fa793]/70"}`}>
             {m === "buzz" ? "🔥 バズ投稿分析" : "📊 データ分析"}
           </button>
         ))}
       </div>
       <textarea value={input} onChange={e => setInput(e.target.value)} rows={5}
         placeholder={mode === "buzz" ? "バズった投稿のURL・本文・数字を貼り付け…" : "フォロワー数・いいね数・リーチ数などを入力…"}
-        className="w-full bg-gray-900 border border-gray-800 text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-yellow-600/50 mb-3" />
+        className="w-full bg-[#181b30] border border-[#262b4a] text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#0fa793]/50 mb-3" />
       <button onClick={run} disabled={loading || !input.trim()}
-        className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors mb-4">
+        className="px-6 py-2.5 bg-[#0fa793] hover:bg-[#2fd4be] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors mb-4">
         {loading ? "分析中…" : "🔍 分析する"}
       </button>
       {output && (
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
+        <div className="bg-[#181b30] border border-[#262b4a] rounded-2xl p-4">
           <div className="flex justify-end mb-2"><CopyBtn text={output} /></div>
           <LinkedText text={output} />
         </div>
@@ -1278,29 +1278,40 @@ function AnalyzeTab() {
 export default function Home() {
   const [tab, setTab] = useState<Tab>("script");
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: "weekly",  label: "📅 週間プラン" },
-    { key: "script",  label: "🎬 台本生成" },
-    { key: "library", label: "📚 ライブラリ" },
-    { key: "editor",  label: "🎞 自動編集" },
-    { key: "dashboard", label: "📈 ダッシュボード" },
-    { key: "news",    label: "🗞 時事ネタ" },
-    { key: "analyze", label: "🔍 分析" },
+  const tabs: { key: Tab; en: string; jp: string }[] = [
+    { key: "weekly",    en: "Plan",    jp: "週間プラン" },
+    { key: "script",    en: "Script",  jp: "台本生成" },
+    { key: "library",   en: "Stock",   jp: "ライブラリ" },
+    { key: "editor",    en: "Edit",    jp: "自動編集" },
+    { key: "dashboard", en: "Growth",  jp: "ダッシュボード" },
+    { key: "news",      en: "News",    jp: "時事ネタ" },
+    { key: "analyze",   en: "Analyze", jp: "分析" },
   ];
 
   return (
-    <div className="min-h-screen bg-[#0f1117]">
-      <header className="border-b border-gray-800 bg-[#0a0d12] px-4 py-3">
-        <span className="text-yellow-500 font-black text-sm tracking-wide">🏠 不動産SNSスタジオ</span>
+    <div className="min-h-screen bg-transparent">
+      {/* エディトリアル・ヘッダー */}
+      <header className="px-5 md:px-8 pt-5 pb-1 flex items-end justify-between">
+        <div>
+          <h1 className="display-type text-3xl md:text-4xl text-[#171a2c] leading-none">
+            SNS Studio<span className="text-[#0fa793]">.</span>
+          </h1>
+          <p className="text-[11px] text-[#171a2c]/50 mt-1 font-medium tracking-wide">不動産アカウントを、仕組みで伸ばす。</p>
+        </div>
+        <span className="hidden sm:block text-[10px] text-[#171a2c]/35 font-medium tracking-widest uppercase">Real Estate Growth Engine</span>
       </header>
-      <nav className="border-b border-gray-800 bg-[#0a0d12] overflow-x-auto scrollbar-hide">
-        <div className="flex min-w-max">
-          {tabs.map(({ key, label }) => (
+
+      {/* スライド式ナビ：英語見出し＋日本語サブ */}
+      <nav className="px-3 md:px-6 overflow-x-auto scrollbar-hide border-b-2 border-[#171a2c]/10">
+        <div className="flex min-w-max gap-1">
+          {tabs.map(({ key, en, jp }) => (
             <button key={key} onClick={() => setTab(key)}
-              className={`px-5 py-3 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                tab === key ? "border-yellow-500 text-yellow-400" : "border-transparent text-gray-500 hover:text-gray-300"
+              className={`relative px-4 py-2.5 text-left transition-colors whitespace-nowrap ${
+                tab === key ? "" : "opacity-45 hover:opacity-80"
               }`}>
-              {label}
+              <span className="display-type block text-base leading-tight text-[#171a2c]">{en}</span>
+              <span className="block text-[10px] text-[#171a2c]/60 font-medium">{jp}</span>
+              {tab === key && <span className="absolute left-3 right-3 -bottom-0.5 h-[3px] bg-[#0fa793]" />}
             </button>
           ))}
         </div>

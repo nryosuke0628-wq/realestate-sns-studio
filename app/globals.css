@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,9 +9,13 @@
 body {
   margin: 0;
   padding: 0;
-  background-color: #0f1117;
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* スライドと同じ：紙のようなウォームグレー地＋微細なノイズ */
+  background-color: #e9e8e4;
+  background-image: radial-gradient(rgba(23, 26, 44, 0.035) 1px, transparent 1px);
+  background-size: 4px 4px;
+  color: #171a2c;
+  font-family: "Space Grotesk", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-feature-settings: "palt";
 }
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -17,12 +23,15 @@ body {
 
 .output-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #374151 transparent;
+  scrollbar-color: #333a63 transparent;
 }
 .output-scroll::-webkit-scrollbar { width: 6px; }
 .output-scroll::-webkit-scrollbar-track { background: transparent; }
-.output-scroll::-webkit-scrollbar-thumb { background-color: #374151; border-radius: 3px; }
+.output-scroll::-webkit-scrollbar-thumb { background-color: #333a63; border-radius: 3px; }
 
-.gold { color: #d4af37; }
-.gold-border { border-color: #d4af37; }
-.gold-bg { background-color: #d4af37; }
+/* 見出し用：スライドの "Business" のような詰まった極太タイポ */
+.display-type {
+  font-family: "Space Grotesk", "Noto Sans JP", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
