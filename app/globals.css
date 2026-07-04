@@ -122,3 +122,23 @@ body {
 .dark .text-pink-600 { color: #f9a8d4; }
 .dark .output-scroll { scrollbar-color: #3a4478 transparent; }
 .dark .output-scroll::-webkit-scrollbar-thumb { background-color: #3a4478; }
+
+/* ── コーチングジャンル：グレー基調へ変身 ───────────── */
+.coaching body {
+  background-color: #1b1c21;
+  background-image:
+    conic-gradient(from 210deg at 50% 50%,
+      #26272e 0deg 120deg,
+      #1f2026 120deg 240deg,
+      #17181d 240deg 360deg);
+}
+.coaching .text-\[\#5b6cff\] { color: #8a90a3; }
+.coaching .text-\[\#8b96ff\] { color: #a8adbd; }
+.coaching .bg-\[\#8b96ff\] { background-color: #a8adbd; }
+.coaching .bg-\[\#1c2340\] { background-color: #2e3038; }
+.coaching .hover\:bg-\[\#2a3358\]:hover { background-color: #3c3f49; }
+.coaching .bg-\[\#eef0ff\] { background-color: #f0f0f3; }
+.coaching .border-\[\#5b6cff\] { border-color: #8a90a3; }
+.coaching .bg-\[\#5b6cff\]\/10 { background-color: rgba(138, 144, 163, 0.12); }
+.coaching .border-\[\#5b6cff\]\/40 { border-color: rgba(138, 144, 163, 0.4); }
+.coaching.dark .bg-\[\#1c2340\] { background-color: #6a6f80; }

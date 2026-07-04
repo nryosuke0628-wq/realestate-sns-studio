@@ -5,7 +5,7 @@ import {
   Segment, Cue, extractNarration, splitForCaptions,
   detectSpeechSegments, allocateCues, generateSRT, generateCutSheet,
   subtractRanges, encodeWav16k, cuesFromTimings,
-  extractEditedAudio, proEditorPass, speechTimeToOriginal,
+  extractEditedAudio, proEditorPass, speechTimeToOriginal, originalToSpeechTime,
 } from "@/lib/video";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
@@ -87,6 +87,9 @@ export default function EditorTab() {
   const pipelineDoneRef = useRef<string>("");
   // スタイル・仕上げ
   const [style, setStyle] = useState<StyleKey>("classic");
+  const [shift, setShift] = useState(0); // テロップ全体の時間シフト（秒）
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewTime, setPreviewTime] = useState(0);
   const [audioClean, setAudioClean] = useState(true);
   const ffmpegRef = useRef<unknown>(null);
   const audioRef = useRef<{ channel: Float32Array; sampleRate: number } | null>(null);
@@ -99,7 +102,8 @@ export default function EditorTab() {
   // ① 動画の音声を解析して無音区間を検出
   const analyze = async (f: File) => {
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
-    setQaReport(null); setQaLog([]); setLineTimings(null);
+    setQaReport(null); setQaLog([]); setLineTimings(null); setShift(0);
+    setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
     pipelineDoneRef.current = "";
     try {
       const buf = await f.arrayBuffer();
@@ -200,10 +204,16 @@ export default function EditorTab() {
       log(d.remove.length > 0 ? `🧠 AI監督：${d.remove.length}箇所の言い淀み・NGをカット` : "🧠 AI監督：カット不要、良いテイクです");
 
       let timings: ({ start: number; end: number } | undefined)[] | null = null;
-      if (Array.isArray(d.lines) && d.lines.length > 0) {
-        timings = [];
-        for (const l of d.lines) timings[l.index] = { start: l.start, end: l.end };
-        log("🎯 字幕タイミングを実測値に補正");
+      if (Array.isArray(d.lines) && caps.length > 0) {
+        const t: ({ start: number; end: number } | undefined)[] = [];
+        for (const l of d.lines) if (l.index < caps.length) t[l.index] = { start: l.start, end: l.end };
+        const coverage = t.filter(Boolean).length / caps.length;
+        if (coverage >= 0.7) {
+          timings = t;
+          log(`🎯 字幕タイミングを実測値に補正（${Math.round(coverage * 100)}%カバー）`);
+        } else {
+          log("🎯 実測タイミングが不完全のため推定方式で統一（ズレ防止）");
+        }
       }
 
       // ── STEP 2-3: プロ編集家の機械修正 → SNSコンサル採点ループ（最大3周）
@@ -262,6 +272,13 @@ export default function EditorTab() {
     setQaRunning(false);
   };
 
+  // 全体シフトを適用したCue（プレビュー・書き出し共通）
+  const shiftedCues = cues.map(c => ({ ...c, start: Math.max(0, c.start + shift), end: Math.max(0.2, c.end + shift) }));
+
+  // プレビュー動画の現在時刻（元動画）→ カット後時間 → アクティブ字幕
+  const previewSpeechT = originalToSpeechTime(previewTime, segments);
+  const activeCueIdx = shiftedCues.findIndex(c => previewSpeechT >= c.start && previewSpeechT < c.end);
+
   // 言語ごとのSRTテキスト生成用：日中2段組は1つの字幕に2行
   const srtCues = (): Cue[] => {
     if (lang === "ja" || zhLines.length === 0) return cues;
@@ -274,6 +291,10 @@ export default function EditorTab() {
   // ② ブラウザ内で自動編集（ジャンプカット＋中央テロップ焼き込み）
   const render = async () => {
     if (!file || segments.length === 0) return;
+    if (shiftedCues.length === 0) {
+      const ok = window.confirm("テロップが0枚です（台本未選択またはナレーション空欄）。テロップなしで書き出しますか？");
+      if (!ok) return;
+    }
     setPhase("rendering"); setProgress(0); setErrorMsg("");
     try {
       setStatusMsg("編集エンジンを読み込み中…（初回は1〜2分かかります）");
@@ -301,8 +322,8 @@ export default function EditorTab() {
 
       // テロップテキストをファイル化（エスケープ問題回避）
       const enc = new TextEncoder();
-      for (let i = 0; i < cues.length; i++) {
-        if (lang !== "zh") await ffmpeg.writeFile(`t${i}.txt`, enc.encode(cues[i].text));
+      for (let i = 0; i < shiftedCues.length; i++) {
+        if (lang !== "zh") await ffmpeg.writeFile(`t${i}.txt`, enc.encode(shiftedCues[i].text));
         if (lang !== "ja" && zhLines[i]) await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhLines[i]));
       }
 
@@ -316,8 +337,8 @@ export default function EditorTab() {
 
       const st = STYLES[style];
       const drawParts: string[] = [];
-      for (let i = 0; i < cues.length; i++) {
-        const c = cues[i];
+      for (let i = 0; i < shiftedCues.length; i++) {
+        const c = shiftedCues[i];
         const isHook = c.start < 3; // 冒頭フックは大きく強調
         const enable = `enable=between(t\\,${c.start.toFixed(2)}\\,${c.end.toFixed(2)})`;
         const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
@@ -491,7 +512,44 @@ export default function EditorTab() {
       {/* STEP 3: 出力 */}
       {phase !== "idle" && phase !== "analyzing" && segments.length > 0 && (
         <div className="border border-[#5b6cff]/40 bg-[#5b6cff]/10 rounded-2xl p-4 space-y-3">
-          <p className="text-sm font-bold text-[#5b6cff]">③ 書き出し</p>
+          <p className="text-sm font-bold text-[#5b6cff]">③ プレビューで確認 → 書き出し</p>
+
+          {/* 書き出し前プレビュー：テロップがリアルタイムで重なる */}
+          {previewUrl && shiftedCues.length > 0 && (
+            <div className="space-y-2">
+              <div className="relative bg-black rounded-xl overflow-hidden max-w-[280px] mx-auto">
+                <video src={previewUrl} controls playsInline
+                  onTimeUpdate={e => setPreviewTime((e.target as HTMLVideoElement).currentTime)}
+                  className="w-full aspect-[9/16] object-cover" />
+                {activeCueIdx >= 0 && (
+                  <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 text-center pointer-events-none">
+                    <span className="inline-block text-white font-black text-sm leading-snug px-1"
+                      style={{ textShadow: "0 0 4px #000, 0 0 8px #000, 2px 2px 2px #000" }}>
+                      {shiftedCues[activeCueIdx].text}
+                    </span>
+                    {lang !== "ja" && zhLines[activeCueIdx] && (
+                      <span className="block text-white/90 font-bold text-[10px] mt-0.5"
+                        style={{ textShadow: "0 0 4px #000, 2px 2px 2px #000" }}>
+                        {zhLines[activeCueIdx]}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-center gap-2 text-xs">
+                <span className="text-[#7b809c]">テロップがズレていたら：</span>
+                <button onClick={() => setShift(s => Math.round((s - 0.2) * 10) / 10)}
+                  className="btn-pop px-2.5 py-1 border border-[#d6d9e6] rounded-lg text-[#2a3052]">◀ 0.2秒早く</button>
+                <span className="font-bold text-[#5b6cff] w-14 text-center">{shift > 0 ? "+" : ""}{shift.toFixed(1)}秒</span>
+                <button onClick={() => setShift(s => Math.round((s + 0.2) * 10) / 10)}
+                  className="btn-pop px-2.5 py-1 border border-[#d6d9e6] rounded-lg text-[#2a3052]">0.2秒遅く ▶</button>
+              </div>
+              <p className="text-xs text-[#9ba0b8] text-center">※プレビューは元動画のまま再生されます（無音カットは書き出し時に適用）</p>
+            </div>
+          )}
+          {shiftedCues.length === 0 && (
+            <p className="text-xs font-bold text-red-500">⚠ テロップが0枚です。①で台本を選ぶかナレーションを入力してください</p>
+          )}
 
           {/* テロップスタイル選択 */}
           <div className="flex items-center gap-2 flex-wrap">

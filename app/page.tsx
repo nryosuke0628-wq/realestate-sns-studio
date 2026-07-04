@@ -67,11 +67,16 @@ interface BookmarkedIdea {
 }
 
 // ── API & Parsers ─────────────────────────────────────────────────────
+function currentGenre(): string {
+  if (typeof window === "undefined") return "realestate";
+  return localStorage.getItem("studio_genre") ?? "realestate";
+}
+
 async function callAPI(feature: string, input = "", options = {}): Promise<string> {
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ feature, input, options }),
+    body: JSON.stringify({ feature, input, options, genre: currentGenre() }),
   });
   const data = await res.json();
   return data.reply ?? data.error ?? "";
@@ -412,6 +417,8 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
   const [label, setLabel] = useState("");
   const [showDebate, setShowDebate] = useState(false);
   const [prompterOpen, setPrompterOpen] = useState(false);
+  const [viralOpen, setViralOpen] = useState(false);
+  const [viralInput, setViralInput] = useState("");
   const [revOpen, setRevOpen] = useState(false);
   const [revComment, setRevComment] = useState("");
   const [revLoading, setRevLoading] = useState(false);
@@ -421,6 +428,28 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
 
   const push = (s: ChatSession) => onUpdate({ ...s });
   const addMsg = (s: ChatSession, msg: AgentMessage): ChatSession => ({ ...s, messages: [...s.messages, msg] });
+
+  // 🚀 バズ投稿から逆算：貼り付けがあればそれを最優先、なければAIがジャンル横断収集
+  const startViral = async () => {
+    setIdeaRunning(true);
+    let source = viralInput.trim();
+    if (source) {
+      setLabel("🚀 貼り付けたバズ投稿を分析中…");
+      source = `【ユーザーが指定したバズ投稿（最優先の参考元）】\n${source}`;
+    } else {
+      setLabel("🚀 ジャンル横断でバズ投稿を収集中…");
+      source = await callAPI("viral_collect");
+    }
+    let s = addMsg({ ...session, step: "trend" }, { agent: "trend", content: source });
+    push(s);
+
+    setLabel("💡 バズの型をこのジャンルのネタ案に変換中…");
+    const ideaRes = await callAPI("viral_convert", source + buildPerfContext());
+    const ideas = parseIdeas(ideaRes);
+    s = { ...addMsg(s, { agent: "idea", content: ideaRes }), step: "ideas", ideas };
+    push(s);
+    setIdeaRunning(false);
+  };
 
   const startDebate = async () => {
     setIdeaRunning(true);
@@ -589,14 +618,40 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
     <div className="flex flex-col h-full gap-4">
       {/* アイドル */}
       {isIdle && (
-        <div className="flex flex-col items-center justify-center flex-1 text-center px-4">
-          <div className="text-5xl mb-4">🎬</div>
-          <p className="text-sm text-[#7b809c] mb-6">AIチームがバズる台本を作り上げます</p>
-          <button onClick={startDebate}
-            className="px-8 py-3 btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-2xl text-sm transition-colors">
-            🎬 ディスカッション開始
-          </button>
-          <p className="text-xs text-[#9ba0b8] mt-3">トレンド収集 → ネタ案3案 → 選択 → 討論 → 最終台本 → Threads</p>
+        <div className="flex flex-col items-center justify-center flex-1 px-4 py-6 overflow-y-auto output-scroll">
+          <p className="text-sm text-[#7b809c] mb-5 text-center">進め方を選んでください</p>
+          <div className="stagger grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl">
+            {/* 従来：トレンドから */}
+            <button onClick={startDebate}
+              className="card-hover text-left border border-[#e3e5ef] bg-white rounded-2xl p-5 hover:border-[#5b6cff]/60 transition-colors">
+              <div className="text-3xl mb-2">🔍</div>
+              <p className="display-type text-base text-[#171c33] mb-1">トレンドから探す</p>
+              <p className="text-xs text-[#5a6080] leading-relaxed">ジャンルの最新トレンドを収集してネタ案3つを提案。いつもの流れ</p>
+            </button>
+            {/* 新：バズ投稿から逆算 */}
+            <button onClick={() => setViralOpen(true)}
+              className={`card-hover text-left border rounded-2xl p-5 transition-colors ${viralOpen ? "border-[#5b6cff] bg-[#eef0ff]" : "border-[#e3e5ef] bg-white hover:border-[#5b6cff]/60"}`}>
+              <div className="text-3xl mb-2">🚀</div>
+              <p className="display-type text-base text-[#171c33] mb-1">バズ投稿から逆算</p>
+              <p className="text-xs text-[#5a6080] leading-relaxed">ジャンル問わず伸びてる投稿の「型」を分析して、このジャンルのネタに変換</p>
+            </button>
+          </div>
+
+          {viralOpen && (
+            <div className="anim-in w-full max-w-2xl mt-4 border border-[#5b6cff]/40 bg-white rounded-2xl p-4 space-y-3">
+              <p className="text-xs text-[#5a6080] leading-relaxed">
+                参考にしたいバズ投稿があれば貼ってください（URL・内容・ジャンル問わず、複数OK）。
+                <span className="text-[#5b6cff] font-semibold">貼った投稿が最優先の参考元</span>になります。空欄ならAIがジャンル横断で収集します。
+              </p>
+              <textarea value={viralInput} onChange={e => setViralInput(e.target.value)} rows={4}
+                placeholder={"例：\n・https://www.instagram.com/reel/xxxx（美容系・50万再生）フックは「毛穴ケア、9割が間違ってます」\n・TikTokで見た「新卒1年目に戻れるなら」系の語りが伸びてた"}
+                className="w-full bg-[#f1f2f7] border border-[#d6d9e6] text-[#1e2440] text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#5b6cff] placeholder:text-[#a6abc2]" />
+              <button onClick={startViral}
+                className="w-full py-2.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white text-sm font-bold rounded-xl transition-colors">
+                🚀 この方針でネタ案を作る
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1323,6 +1378,19 @@ function AnalyzeTab() {
 export default function Home() {
   const [tab, setTab] = useState<Tab>("script");
   const [dark, setDark] = useState(false);
+  const [genre, setGenre] = useState<"realestate" | "coaching">("realestate");
+
+  useEffect(() => {
+    const g = (localStorage.getItem("studio_genre") ?? "realestate") as "realestate" | "coaching";
+    setGenre(g);
+    document.documentElement.classList.toggle("coaching", g === "coaching");
+  }, []);
+
+  const switchGenre = (g: "realestate" | "coaching") => {
+    setGenre(g);
+    localStorage.setItem("studio_genre", g);
+    document.documentElement.classList.toggle("coaching", g === "coaching");
+  };
 
   // 初回はOS設定に追従、以降はlocalStorageの選択を維持
   useEffect(() => {
@@ -1357,10 +1425,25 @@ export default function Home() {
           <h1 className="display-type text-3xl md:text-4xl text-white leading-none">
             R agent <span className="text-[#8b96ff]">SNS studio.</span>
           </h1>
-          <p className="text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">不動産アカウントを、仕組みで伸ばす。</p>
+          <p className="text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">
+            {genre === "coaching" ? "コーチング発信を、仕組みで伸ばす。" : "不動産アカウントを、仕組みで伸ばす。"}
+          </p>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="hidden sm:block text-[10px] text-white/30 font-medium tracking-widest uppercase">Real Estate Growth Engine</span>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:block text-[10px] text-white/30 font-medium tracking-widest uppercase">
+            {genre === "coaching" ? "Coaching Growth Engine" : "Real Estate Growth Engine"}
+          </span>
+          {/* ジャンル切替 */}
+          <div className="flex rounded-full border border-white/15 overflow-hidden text-[11px] font-bold">
+            <button onClick={() => switchGenre("realestate")}
+              className={`px-3 py-1.5 transition-colors ${genre === "realestate" ? "bg-white text-[#171a2c]" : "text-white/50 hover:text-white"}`}>
+              🏠 不動産
+            </button>
+            <button onClick={() => switchGenre("coaching")}
+              className={`px-3 py-1.5 transition-colors ${genre === "coaching" ? "bg-white text-[#26282e]" : "text-white/50 hover:text-white"}`}>
+              🎯 コーチング
+            </button>
+          </div>
           <button onClick={toggleTheme} aria-label="テーマ切替"
             className="btn-pop w-9 h-9 rounded-full border border-white/15 text-base flex items-center justify-center hover:border-white/40 transition-colors">
             <span className="inline-block transition-transform duration-500" style={{ transform: dark ? "rotate(360deg)" : "rotate(0deg)" }}>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
 import { DEBATE_PROMPTS } from "@/lib/agents-debate";
+import { COACHING_PROMPTS } from "@/lib/agents-coaching";
 import { getSupabase } from "@/lib/supabase";
 
 export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s
@@ -92,9 +93,21 @@ const currentMonth = new Date().getMonth() + 1;
 // 参考投稿はInstagramドメイン限定で検索し、note等の記事URLが混ざるのを防ぐ
 const SEARCH_MAP: Record<string, { q: string; domains?: string[] }[]> = {
   trend_collect: [
-    { q: `不動産 リール 賃貸 マイホーム 内見`, domains: ["instagram.com"] },
-    { q: `不動産 宅建 住宅ローン 一人暮らし reel`, domains: ["instagram.com"] },
+    { q: `不動産 リール バズった 再生数 万回 分析`, domains: ["instagram.com"] },
+    { q: `不動産 リール TikTok バズ 再生回数 万 事例 ${currentYear}年` },
     { q: `${currentYear}年${currentMonth}月 不動産 ニュース 住宅ローン 金利 市況` },
+  ],
+  // コーチングジャンル用トレンド検索
+  trend_collect_coaching: [
+    { q: `自己啓発 マインドセット リール バズ 再生数 万`, domains: ["instagram.com"] },
+    { q: `コーチング 習慣化 TikTok ショート動画 バズった 再生回数 ${currentYear}年` },
+    { q: `${currentYear}年 自己啓発 トレンド テーマ 人気` },
+  ],
+  // ジャンル不問のバズ収集（バズ逆算モード用）
+  viral_collect: [
+    { q: `TikTok リール バズった動画 再生数 万回 トーク 分析 ${currentYear}年` },
+    { q: `ショート動画 バズ 事例 再生回数 100万 フック 構成` },
+    { q: `Instagram リール 伸びた 投稿 分析 再生数`, domains: ["instagram.com"] },
   ],
   news_realestate: [
     { q: `${currentYear}年${currentMonth}月 最新ニュース 不動産 住宅ローン 金利` },
@@ -104,11 +117,13 @@ const SEARCH_MAP: Record<string, { q: string; domains?: string[] }[]> = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { feature, input, options } = await request.json();
+    const { feature, input, options, genre } = await request.json();
     if (!feature) return NextResponse.json({ error: "feature required" }, { status: 400 });
 
+    // ジャンル切替：コーチングは専用人格で上書き（無いキーは共通にフォールバック）
     const promptMap: Record<string, string> = {
       ...DEBATE_PROMPTS,
+      ...(genre === "coaching" ? COACHING_PROMPTS : {}),
       news_realestate: NEWS_PROMPT,
       buzz_analyze: BUZZ_ANALYZE_PROMPT,
       data_analyze: DATA_ANALYZE_PROMPT,
@@ -117,8 +132,9 @@ export async function POST(request: NextRequest) {
     const today = new Date();
     let systemPrompt = `【最重要】今日は${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日です。「現在」「今」「最新」と書く場合は必ずこの年月を使うこと。学習データ上の古い日付（2025年など）を「現在」として書くことを禁止します。\n\n` + (promptMap[feature] ?? DEBATE_PROMPTS.trend_collect);
 
-    if (SEARCH_MAP[feature]) {
-      const allResults = await Promise.all(SEARCH_MAP[feature].map(({ q, domains }) => searchWeb(q, domains)));
+    const searchKey = feature === "trend_collect" && genre === "coaching" ? "trend_collect_coaching" : feature;
+    if (SEARCH_MAP[searchKey]) {
+      const allResults = await Promise.all(SEARCH_MAP[searchKey].map(({ q, domains }) => searchWeb(q, domains)));
       const results = allResults.filter(Boolean).join("\n\n");
       if (results) systemPrompt += `\n\n【リアルタイム検索結果】\n${results}`;
     }
@@ -160,6 +176,8 @@ export async function POST(request: NextRequest) {
       caption_gen: 800,
       translate_captions: 1500,
       user_revision: 2000,
+      viral_collect: 1200,
+      viral_convert: 2000,
     };
 
     const response = await anthropic.messages.create({
