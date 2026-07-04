@@ -511,6 +511,15 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
     push(s);
 
     saveLibraryItem({ id: s.id, title: extractIdeaTitle(session.ideas[idx]), script: finalScript, threads: finalThreads, caption, status: "none", createdAt: Date.now() });
+
+    // Threads自動投稿キューに追加（毎日19時に1件ずつ自動投稿される）
+    if (finalThreads.length > 0) {
+      fetch("/api/threads-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: extractIdeaTitle(session.ideas[idx]), posts: finalThreads }),
+      }).catch(() => {});
+    }
     setScriptRunning(false);
     setLabel("");
   };
@@ -911,6 +920,52 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
   );
 }
 
+interface QueueItem {
+  id: number; title: string; posts: string[]; status: string; error: string | null;
+  created_at: string; posted_at: string | null;
+}
+
+function ThreadsQueueSection() {
+  const [items, setItems] = useState<QueueItem[]>([]);
+  const [enabled, setEnabled] = useState(true);
+
+  const reload = () => {
+    fetch("/api/threads-queue").then(r => r.json())
+      .then(d => { setItems(d.items ?? []); setEnabled(d.enabled ?? false); })
+      .catch(() => setEnabled(false));
+  };
+  useEffect(() => { reload(); }, []);
+
+  if (!enabled || items.length === 0) return null;
+
+  const statusBadge = (s: string) =>
+    s === "posted" ? <span className="text-xs text-green-400">✅ 投稿済み</span> :
+    s === "error"  ? <span className="text-xs text-red-400">❌ エラー</span> :
+                     <span className="text-xs text-orange-400">⏳ 待機中</span>;
+
+  return (
+    <section>
+      <h2 className="text-sm font-bold text-gray-200 mb-1">🧵 Threads自動投稿キュー</h2>
+      <p className="text-xs text-gray-600 mb-3">毎日19:00に上から1件ずつ自動投稿されます</p>
+      <div className="space-y-2">
+        {items.map(q => (
+          <div key={q.id} className="flex items-center gap-3 border border-gray-800 bg-gray-900 rounded-xl px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-200 truncate">{q.title}</p>
+              <p className="text-xs text-gray-600">{q.posts.length}連投稿 ・ {new Date(q.created_at).toLocaleDateString("ja-JP")}</p>
+              {q.error && <p className="text-xs text-red-400 truncate">⚠ {q.error}</p>}
+            </div>
+            {statusBadge(q.status)}
+            <button
+              onClick={async () => { await fetch(`/api/threads-queue?id=${q.id}`, { method: "DELETE" }); reload(); }}
+              className="text-gray-600 hover:text-red-500 text-xs shrink-0 transition-colors">✕</button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function LibraryTab() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [bookmarks, setBookmarks] = useState<BookmarkedIdea[]>([]);
@@ -920,6 +975,7 @@ function LibraryTab() {
 
   return (
     <div className="overflow-y-auto output-scroll h-[calc(100vh-96px)] px-3 md:px-6 py-5 space-y-8">
+      <ThreadsQueueSection />
       {/* 保留ネタ案 */}
       {bookmarks.length > 0 && (
         <section>

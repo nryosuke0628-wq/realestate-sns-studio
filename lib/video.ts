@@ -159,6 +159,41 @@ export function generateSRT(cues: Cue[], segments: Segment[], mapToOriginal: boo
   }).join("\n");
 }
 
+// AI監督が指定した削除区間を発話区間から差し引く
+export function subtractRanges(segments: Segment[], removes: Segment[]): Segment[] {
+  let result = [...segments.map(s => ({ ...s }))];
+  for (const r of removes) {
+    const next: Segment[] = [];
+    for (const s of result) {
+      if (r.end <= s.start || r.start >= s.end) { next.push(s); continue; }
+      if (r.start > s.start) next.push({ start: s.start, end: r.start });
+      if (r.end < s.end) next.push({ start: r.end, end: s.end });
+    }
+    result = next;
+  }
+  return result.filter(s => s.end - s.start >= 0.3);
+}
+
+// 音声をモノラル16kHzのWAVに変換（Gemini解析用・サイズ削減）
+export function encodeWav16k(channel: Float32Array, srcRate: number): Blob {
+  const targetRate = 16000;
+  const ratio = srcRate / targetRate;
+  const outLen = Math.floor(channel.length / ratio);
+  const pcm = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const v = channel[Math.floor(i * ratio)];
+    pcm[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+  }
+  const header = new ArrayBuffer(44);
+  const dv = new DataView(header);
+  const writeStr = (off: number, s: string) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+  writeStr(0, "RIFF"); dv.setUint32(4, 36 + pcm.length * 2, true); writeStr(8, "WAVE");
+  writeStr(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, targetRate, true); dv.setUint32(28, targetRate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  writeStr(36, "data"); dv.setUint32(40, pcm.length * 2, true);
+  return new Blob([header, pcm.buffer], { type: "audio/wav" });
+}
+
 // CapCut等で手動カットする人向けの「残す区間」指示書
 export function generateCutSheet(segments: Segment[], originalDuration: number): string {
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
