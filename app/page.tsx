@@ -1355,7 +1355,7 @@ export default function Home() {
       <header className="px-5 md:px-8 pt-5 pb-1 flex items-end justify-between">
         <div>
           <h1 className="display-type text-3xl md:text-4xl text-white leading-none">
-            sns studio<span className="text-[#8b96ff]">.</span>
+            R agent <span className="text-[#8b96ff]">SNS studio.</span>
           </h1>
           <p className="text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">不動産アカウントを、仕組みで伸ばす。</p>
         </div>
