@@ -247,7 +247,7 @@ function AgentBubble({ msg }: { msg: AgentMessage }) {
   const isLong = msg.content.length > 500;
   const preview = isLong && !expanded ? msg.content.slice(0, 400) + "…" : msg.content;
   return (
-    <div className={`rounded-xl border p-4 ${meta.color}`}>
+    <div className={`anim-in rounded-xl border p-4 ${meta.color}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="flex items-center gap-1.5 text-xs font-semibold text-[#2a3052]">
           <span>{meta.emoji}</span>{meta.name}
@@ -397,7 +397,7 @@ function IdeaCard({ idea, index, onSelect, onBookmark, bookmarked }: {
           {expanded ? "閉じる ▲" : "詳細 ▼"}
         </button>
         <button onClick={onSelect}
-          className="flex-1 text-xs py-2 bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-xl transition-colors">
+          className="flex-1 text-xs py-2 btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-xl transition-colors">
           この案で作成
         </button>
       </div>
@@ -593,7 +593,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           <div className="text-5xl mb-4">🎬</div>
           <p className="text-sm text-[#7b809c] mb-6">AIチームがバズる台本を作り上げます</p>
           <button onClick={startDebate}
-            className="px-8 py-3 bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-2xl text-sm transition-colors">
+            className="px-8 py-3 btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-2xl text-sm transition-colors">
             🎬 ディスカッション開始
           </button>
           <p className="text-xs text-[#9ba0b8] mt-3">トレンド収集 → ネタ案3案 → 選択 → 討論 → 最終台本 → Threads</p>
@@ -621,7 +621,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
               ネタ案の読み込みに失敗しました。もう一度「新規」から試してください。
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="stagger grid grid-cols-1 sm:grid-cols-3 gap-3">
               {session.ideas.map((idea, i) => (
                 <IdeaCard key={i} idea={idea} index={i}
                   onSelect={() => selectIdea(i)}
@@ -690,7 +690,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
                   <div className="py-1"><Spinner label={label} /></div>
                 ) : (
                   <button onClick={submitRevision} disabled={!revComment.trim()}
-                    className="w-full py-2.5 bg-[#5b6cff] hover:bg-[#5b6cff] disabled:opacity-40 text-black text-sm font-bold rounded-xl transition-colors">
+                    className="w-full py-2.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-40 text-white text-sm font-bold rounded-xl transition-colors">
                     🔁 この指示で再生成する
                   </button>
                 )}
@@ -781,7 +781,7 @@ function WeeklyTab({ goScript }: { goScript: () => void }) {
     <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <button onClick={generate} disabled={loading}
-          className="px-6 py-2.5 bg-[#5b6cff] hover:bg-[#5b6cff] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+          className="px-6 py-2.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors">
           {loading ? "生成中…" : plan ? "📅 プランを作り直す" : "📅 今週のプランを生成"}
         </button>
         {plan && !loading && (
@@ -806,7 +806,7 @@ function WeeklyTab({ goScript }: { goScript: () => void }) {
       )}
 
       {!loading && plan && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="stagger grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {plan.days.map((d, i) => (
             <div key={i} className={`border rounded-2xl p-4 flex flex-col gap-3 ${d.scripted ? "border-green-300 bg-green-50" : "border-[#d6d9e6] bg-white"}`}>
               <div className="flex items-center justify-between">
@@ -815,7 +815,7 @@ function WeeklyTab({ goScript }: { goScript: () => void }) {
               </div>
               <LinkedText text={d.idea} className="text-xs text-[#2a3052] whitespace-pre-wrap leading-relaxed flex-1" />
               <button onClick={() => makeScript(i)}
-                className={`text-xs py-2 font-bold rounded-xl transition-colors ${d.scripted ? "border border-[#d6d9e6] text-[#7b809c] hover:text-[#2a3052]" : "bg-[#1c2340] hover:bg-[#2a3358] text-white"}`}>
+                className={`text-xs py-2 font-bold rounded-xl transition-colors ${d.scripted ? "border border-[#d6d9e6] text-[#7b809c] hover:text-[#2a3052]" : "btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white"}`}>
                 {d.scripted ? "もう一度台本化" : "🎬 台本化する"}
               </button>
             </div>
@@ -871,7 +871,7 @@ function ScriptTab() {
       `}>
         <div className="p-3 border-b border-[#e3e5ef] flex gap-2">
           <button onClick={createSession}
-            className="flex-1 py-2 bg-[#1c2340] hover:bg-[#2a3358] text-white text-xs font-bold rounded-lg transition-colors">
+            className="flex-1 py-2 btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white text-xs font-bold rounded-lg transition-colors">
             ＋ 新規
           </button>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden text-[#7b809c] px-2 text-sm">✕</button>
@@ -906,7 +906,7 @@ function ScriptTab() {
             <div className="flex flex-col items-center justify-center h-full text-[#9ba0b8]">
               <div className="text-5xl mb-4">🎬</div>
               <p className="text-sm mb-4">「新規」ボタンでチャットを作成</p>
-              <button onClick={createSession} className="px-6 py-2.5 bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-xl text-sm">＋ 新しいチャット</button>
+              <button onClick={createSession} className="px-6 py-2.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-xl text-sm">＋ 新しいチャット</button>
             </div>
           )}
         </div>
@@ -930,7 +930,7 @@ function LibraryCard({ item, onStatus, onDelete }: { item: LibraryItem; onStatus
   const statuses: ProductionStatus[] = ["filming", "editing", "posted"];
 
   return (
-    <div className="border border-[#e3e5ef] bg-white rounded-2xl overflow-hidden">
+    <div className="card-hover border border-[#e3e5ef] bg-white rounded-2xl overflow-hidden">
       <div className="p-4">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex-1 min-w-0">
@@ -1090,7 +1090,7 @@ function LibraryTab() {
             <p className="text-sm">台本を生成するとここに自動保存されます</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="stagger grid grid-cols-1 md:grid-cols-2 gap-4">
             {items.map(item => (
               <LibraryCard key={item.id} item={item}
                 onStatus={(id, s) => { updateLibraryStatus(id, s); setItems(loadLibrary()); }}
@@ -1105,24 +1105,56 @@ function LibraryTab() {
 }
 
 // ── Dashboard Tab ─────────────────────────────────────────────────────
+// 数値がカウントアップするフック
+function useCountUp(target: number, duration = 900): number {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    if (target === 0) { setValue(0); return; }
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setValue(Math.round(target * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
+}
+
 function FollowerChart({ history }: { history: { followers: number; created_at: string }[] }) {
   if (history.length < 2) return <p className="text-xs text-[#9ba0b8] py-6 text-center">データが2日分以上たまるとグラフが表示されます</p>;
   const W = 600, H = 160, PAD = 10;
   const vals = history.map(h => h.followers);
   const min = Math.min(...vals), max = Math.max(...vals);
   const range = Math.max(1, max - min);
-  const pts = history.map((h, i) => {
-    const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
-    const y = H - PAD - ((h.followers - min) / range) * (H - PAD * 2);
-    return `${x},${y}`;
-  }).join(" ");
+  const xy = (h: { followers: number }, i: number) => ({
+    x: PAD + (i / (history.length - 1)) * (W - PAD * 2),
+    y: H - PAD - ((h.followers - min) / range) * (H - PAD * 2),
+  });
+  const pts = history.map((h, i) => { const { x, y } = xy(h, i); return `${x},${y}`; }).join(" ");
+  const first = xy(history[0], 0), last = xy(history[history.length - 1], history.length - 1);
+  const areaPts = `${first.x},${H - PAD} ${pts} ${last.x},${H - PAD}`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40">
-      <polyline points={pts} fill="none" stroke="#5b6cff" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      <defs>
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#5b6cff" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#5b6cff" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={areaPts} fill="url(#areaGrad)" className="fade-area" />
+      <polyline points={pts} fill="none" stroke="#5b6cff" strokeWidth="2.5"
+        strokeLinejoin="round" strokeLinecap="round" pathLength={1} className="draw-line" />
       {history.map((h, i) => {
-        const x = PAD + (i / (history.length - 1)) * (W - PAD * 2);
-        const y = H - PAD - ((h.followers - min) / range) * (H - PAD * 2);
-        return <circle key={i} cx={x} cy={y} r="3" fill="#5b6cff" />;
+        const { x, y } = xy(h, i);
+        return (
+          <circle key={i} cx={x} cy={y} r="4" fill="#5b6cff" className="hover:opacity-70 cursor-pointer">
+            <title>{`${new Date(h.created_at).toLocaleDateString("ja-JP")}：${h.followers.toLocaleString()}人`}</title>
+          </circle>
+        );
       })}
     </svg>
   );
@@ -1161,9 +1193,20 @@ function DashboardTab() {
     );
   }
 
+  return <DashboardBody data={data} />;
+}
+
+function DashboardBody({ data }: { data: DashboardData }) {
   const current = data.current ?? 0;
   const goal = data.goal ?? 10000;
   const pct = Math.min(100, (current / goal) * 100);
+  const animated = useCountUp(current);
+  const [barPct, setBarPct] = useState(0);
+  useEffect(() => { const t = setTimeout(() => setBarPct(pct), 150); return () => clearTimeout(t); }, [pct]);
+  const daysLeft = data.projectedDate
+    ? Math.max(0, Math.ceil((new Date(data.projectedDate).getTime() - Date.now()) / 86400000))
+    : null;
+  const maxViews = Math.max(1, ...(data.media ?? []).map(m => m.views ?? 0));
 
   return (
     <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-6">
@@ -1172,17 +1215,18 @@ function DashboardTab() {
         <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
           <div>
             <p className="text-xs text-[#7b809c] mb-1">現在のフォロワー</p>
-            <p className="text-3xl font-black text-[#5b6cff]">{current.toLocaleString()}<span className="text-sm text-[#7b809c] font-normal ml-2">/ {goal.toLocaleString()}人</span></p>
+            <p className="text-3xl font-black text-[#5b6cff]">{animated.toLocaleString()}<span className="text-sm text-[#7b809c] font-normal ml-2">/ {goal.toLocaleString()}人</span></p>
           </div>
           <div className="text-right">
             <p className="text-xs text-[#7b809c]">1日平均 <span className="text-green-600 font-bold">+{data.dailyGrowth ?? 0}</span></p>
             {data.projectedDate && (
-              <p className="text-xs text-[#5a6080] mt-1">📅 達成予測：<span className="text-[#5b6cff] font-bold">{new Date(data.projectedDate).toLocaleDateString("ja-JP")}</span></p>
+              <p className="text-xs text-[#5a6080] mt-1">📅 達成予測：<span className="text-[#5b6cff] font-bold">{new Date(data.projectedDate).toLocaleDateString("ja-JP")}</span>
+                {daysLeft !== null && <span className="ml-1.5 text-[#5b6cff] font-bold">あと{daysLeft}日</span>}</p>
             )}
           </div>
         </div>
         <div className="h-2.5 bg-[#f1f2f7] rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-[#5b6cff] to-[#8b96ff] rounded-full transition-all" style={{ width: `${pct}%` }} />
+          <div className="h-full bg-gradient-to-r from-[#5b6cff] to-[#8b96ff] rounded-full transition-all duration-1000 ease-out" style={{ width: `${barPct}%` }} />
         </div>
         <p className="text-xs text-[#9ba0b8] mt-1.5">{pct.toFixed(1)}% 達成</p>
       </div>
@@ -1201,7 +1245,8 @@ function DashboardTab() {
         ) : (
           <div className="space-y-2">
             {(data.media ?? []).map(m => (
-              <div key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border border-[#e3e5ef] rounded-xl px-4 py-3">
+              <div key={m.id} className="relative overflow-hidden flex flex-wrap items-center gap-x-4 gap-y-1 border border-[#e3e5ef] rounded-xl px-4 py-3">
+                <div className="absolute inset-y-0 left-0 bg-[#5b6cff]/10 transition-all duration-700" style={{ width: `${((m.views ?? 0) / maxViews) * 100}%` }} />
                 <a href={m.permalink ?? "#"} target="_blank" rel="noopener noreferrer"
                   className="flex-1 min-w-[180px] text-xs text-[#2a3052] hover:text-[#5b6cff] truncate transition-colors">
                   {(m.caption ?? "（キャプションなし）").slice(0, 40)}
@@ -1227,7 +1272,7 @@ function NewsTab() {
   return (
     <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-3 md:px-6 py-5">
       <button onClick={run} disabled={loading}
-        className="mb-4 px-6 py-2.5 bg-[#5b6cff] hover:bg-[#5b6cff] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+        className="mb-4 px-6 py-2.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors">
         {loading ? "生成中…" : "🗞 今日の時事ネタ×不動産を生成"}
       </button>
       {output && (
@@ -1261,7 +1306,7 @@ function AnalyzeTab() {
         placeholder={mode === "buzz" ? "バズった投稿のURL・本文・数字を貼り付け…" : "フォロワー数・いいね数・リーチ数などを入力…"}
         className="w-full bg-white border border-[#e3e5ef] text-[#1e2440] text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#5b6cff]/50 mb-3" />
       <button onClick={run} disabled={loading || !input.trim()}
-        className="px-6 py-2.5 bg-[#5b6cff] hover:bg-[#5b6cff] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors mb-4">
+        className="px-6 py-2.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors mb-4">
         {loading ? "分析中…" : "🔍 分析する"}
       </button>
       {output && (
@@ -1277,6 +1322,22 @@ function AnalyzeTab() {
 // ── Main Page ─────────────────────────────────────────────────────────
 export default function Home() {
   const [tab, setTab] = useState<Tab>("script");
+  const [dark, setDark] = useState(false);
+
+  // 初回はOS設定に追従、以降はlocalStorageの選択を維持
+  useEffect(() => {
+    const saved = localStorage.getItem("theme");
+    const initial = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setDark(initial);
+    document.documentElement.classList.toggle("dark", initial);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  };
 
   const tabs: { key: Tab; en: string; jp: string }[] = [
     { key: "weekly",    en: "Plan",    jp: "週間プラン" },
@@ -1298,7 +1359,15 @@ export default function Home() {
           </h1>
           <p className="text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">不動産アカウントを、仕組みで伸ばす。</p>
         </div>
-        <span className="hidden sm:block text-[10px] text-white/30 font-medium tracking-widest uppercase">Real Estate Growth Engine</span>
+        <div className="flex items-center gap-4">
+          <span className="hidden sm:block text-[10px] text-white/30 font-medium tracking-widest uppercase">Real Estate Growth Engine</span>
+          <button onClick={toggleTheme} aria-label="テーマ切替"
+            className="btn-pop w-9 h-9 rounded-full border border-white/15 text-base flex items-center justify-center hover:border-white/40 transition-colors">
+            <span className="inline-block transition-transform duration-500" style={{ transform: dark ? "rotate(360deg)" : "rotate(0deg)" }}>
+              {dark ? "🌙" : "☀️"}
+            </span>
+          </button>
+        </div>
       </header>
 
       {/* スライド式ナビ：英語見出し＋日本語サブ */}
@@ -1316,7 +1385,7 @@ export default function Home() {
           ))}
         </div>
       </nav>
-      <main className="mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
+      <main key={tab} className="anim-in mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
         {tab === "weekly"  && <WeeklyTab goScript={() => setTab("script")} />}
         {tab === "script"  && <ScriptTab />}
         {tab === "library" && <LibraryTab />}

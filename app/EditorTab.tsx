@@ -448,7 +448,7 @@ export default function EditorTab() {
         {qaLog.length > 0 && (
           <div className="bg-[#f1f2f7]/60 border border-blue-200 rounded-xl p-3 space-y-1">
             {qaLog.map((m, i) => (
-              <p key={i} className="text-xs text-[#2a3052]">{m}</p>
+              <p key={i} className="anim-in text-xs text-[#2a3052]">{m}</p>
             ))}
             {qaRunning && <div className="pt-1"><Spinner label="自動QA実行中…" /></div>}
           </div>
@@ -510,7 +510,7 @@ export default function EditorTab() {
           </label>
 
           <button onClick={render} disabled={phase === "rendering" || qaRunning || (lang !== "ja" && zhLines.length === 0)}
-            className="w-full py-3 bg-[#5b6cff] hover:bg-[#5b6cff] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+            className="w-full py-3 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors">
             {phase === "rendering" ? `処理中… ${progress}%` : qaRunning ? "自動QA完了までお待ちください…" : "🎬 書き出す（QA合格済みの内容で）"}
           </button>
           {lang !== "ja" && zhLines.length === 0 && (
