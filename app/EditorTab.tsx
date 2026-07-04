@@ -5,6 +5,7 @@ import {
   Segment, Cue, extractNarration, splitForCaptions,
   detectSpeechSegments, allocateCues, generateSRT, generateCutSheet,
   subtractRanges, encodeWav16k, cuesFromTimings,
+  extractEditedAudio, proEditorPass, speechTimeToOriginal,
 } from "@/lib/video";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
@@ -14,6 +15,18 @@ function loadScripts(): StoredScript[] {
     const items = JSON.parse(localStorage.getItem("script_library") ?? "[]") as { id: string; title: string; script: string }[];
     return items.map(i => ({ id: i.id, title: i.title, script: i.script }));
   } catch { return []; }
+}
+
+function Spinner({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-gray-400">
+      <svg className="animate-spin w-3.5 h-3.5 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+      </svg>
+      {label}
+    </div>
+  );
 }
 
 function download(filename: string, content: string | Blob) {
@@ -62,12 +75,16 @@ export default function EditorTab() {
   const [zhLines, setZhLines] = useState<string[]>([]);
   const [zhHashtags, setZhHashtags] = useState("");
   const [translating, setTranslating] = useState(false);
-  // Gemini編集監督
+  // 自動QAパイプライン（AI監督 → プロ編集家 → SNSコンサル採点ループ）
   const [geminiReady, setGeminiReady] = useState(false);
-  const [directing, setDirecting] = useState(false);
-  const [directorAdvice, setDirectorAdvice] = useState("");
-  const [removedCount, setRemovedCount] = useState(0);
+  const [qaRunning, setQaRunning] = useState(false);
+  const [qaLog, setQaLog] = useState<string[]>([]);
+  const [qaReport, setQaReport] = useState<{
+    score: number | null; iterations: number; fixes: string[];
+    issues: string[]; reshoot: string[]; advice: string;
+  } | null>(null);
   const [lineTimings, setLineTimings] = useState<({ start: number; end: number } | undefined)[] | null>(null);
+  const pipelineDoneRef = useRef<string>("");
   // スタイル・仕上げ
   const [style, setStyle] = useState<StyleKey>("classic");
   const [audioClean, setAudioClean] = useState(true);
@@ -82,7 +99,8 @@ export default function EditorTab() {
   // ① 動画の音声を解析して無音区間を検出
   const analyze = async (f: File) => {
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
-    setDirectorAdvice(""); setRemovedCount(0); setLineTimings(null);
+    setQaReport(null); setQaLog([]); setLineTimings(null);
+    pipelineDoneRef.current = "";
     try {
       const buf = await f.arrayBuffer();
       const ctx = new AudioContext();
@@ -101,13 +119,24 @@ export default function EditorTab() {
     }
   };
 
+  // 動画とナレーションが揃ったら、AI監督→QAループを自動実行（ボタン不要）
+  useEffect(() => {
+    if (phase !== "ready" || segments.length === 0 || !geminiReady || qaRunning) return;
+    const key = `${file?.name ?? ""}::${narration.slice(0, 60)}`;
+    if (pipelineDoneRef.current === key) return;
+    pipelineDoneRef.current = key;
+    runQaPipeline();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, segments.length, narration, geminiReady]);
+
   // ナレーション・区間・実測タイミングが変わったらテロップ割り付けを再計算
   useEffect(() => {
     if (segments.length === 0 || !narration.trim()) { setCaptions([]); setCues([]); return; }
     const caps = splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean));
     setCaptions(caps);
-    // AI監督の実測タイミングがあれば優先、なければ文字数比例で推定
-    setCues(lineTimings ? cuesFromTimings(caps, lineTimings, segments) : allocateCues(caps, segments));
+    // AI監督の実測タイミングがあれば優先、なければ文字数比例で推定 → プロ編集家の自動修正を通す
+    const base = lineTimings ? cuesFromTimings(caps, lineTimings, segments) : allocateCues(caps, segments);
+    setCues(proEditorPass(base, segments).cues);
   }, [narration, segments, lineTimings]);
 
   const keptDuration = segments.reduce((s, x) => s + (x.end - x.start), 0);
@@ -136,43 +165,101 @@ export default function EditorTab() {
     setTranslating(false);
   };
 
-  // Gemini編集監督：音声を解析して言い淀み・噛みの削除区間を判定
-  const runDirector = async () => {
+  const wavToB64 = (wav: Blob) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(wav);
+  });
+
+  // 全自動QAパイプライン：AI監督カット → プロ編集家の機械修正 → SNSコンサル採点（90点未満は再編集、最大3周）
+  const runQaPipeline = async () => {
     if (!audioRef.current) return;
-    setDirecting(true); setErrorMsg("");
+    setQaRunning(true); setErrorMsg(""); setQaLog([]); setQaReport(null);
+    const log = (m: string) => setQaLog(prev => [...prev, m]);
+    const { channel, sampleRate } = audioRef.current;
+
     try {
-      const wav = encodeWav16k(audioRef.current.channel, audioRef.current.sampleRate);
-      if (wav.size > 3.5 * 1024 * 1024) {
-        throw new Error("動画が長すぎます（AI監督は2分以内のテイクに対応）");
-      }
-      const b64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(wav);
-      });
-      const res = await fetch("/api/video-director", {
+      const caps = narration.trim()
+        ? splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean))
+        : [];
+
+      // ── STEP 1: AI監督（元音声からカット判定＋字幕の実測タイミング）
+      log("🧠 AI監督：撮影音声をチェック中…");
+      const fullWav = encodeWav16k(channel, sampleRate);
+      if (fullWav.size > 3.5 * 1024 * 1024) throw new Error("動画が長すぎます（2分以内のテイクに対応）");
+      const dRes = await fetch("/api/video-director", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio: b64, narration, captions }),
+        body: JSON.stringify({ audio: await wavToB64(fullWav), narration, captions: caps }),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      if (data.remove.length > 0) {
-        setSegments(prev => subtractRanges(prev, data.remove));
-        setRemovedCount(data.remove.length);
+      const d = await dRes.json();
+      if (d.error) throw new Error(d.error);
+
+      let segs = d.remove.length > 0 ? subtractRanges(segments, d.remove) : segments;
+      log(d.remove.length > 0 ? `🧠 AI監督：${d.remove.length}箇所の言い淀み・NGをカット` : "🧠 AI監督：カット不要、良いテイクです");
+
+      let timings: ({ start: number; end: number } | undefined)[] | null = null;
+      if (Array.isArray(d.lines) && d.lines.length > 0) {
+        timings = [];
+        for (const l of d.lines) timings[l.index] = { start: l.start, end: l.end };
+        log("🎯 字幕タイミングを実測値に補正");
       }
-      // 各テロップ行の実測タイミングを反映（字幕精度が推定→実測に上がる）
-      if (Array.isArray(data.lines) && data.lines.length > 0) {
-        const timings: ({ start: number; end: number } | undefined)[] = [];
-        for (const l of data.lines) timings[l.index] = { start: l.start, end: l.end };
-        setLineTimings(timings);
+
+      // ── STEP 2-3: プロ編集家の機械修正 → SNSコンサル採点ループ（最大3周）
+      const allFixes: string[] = [];
+      let score: number | null = null;
+      let issues: string[] = [];
+      let reshoot: string[] = [];
+      let advice: string = d.advice ?? "";
+      let iter = 0;
+
+      for (iter = 1; iter <= 3; iter++) {
+        const baseCues = caps.length > 0
+          ? (timings ? cuesFromTimings(caps, timings, segs) : allocateCues(caps, segs))
+          : [];
+        const pro = proEditorPass(baseCues, segs);
+        pro.fixes.forEach(f => { if (!allFixes.includes(f)) allFixes.push(f); });
+        if (pro.fixes.length > 0) log(`🎬 プロ編集家：${pro.fixes.length}件を自動修正`);
+
+        if (caps.length === 0) break; // 字幕なしなら採点スキップ
+
+        log(`📱 SNSコンサル：編集後の音声を試聴して採点中…（${iter}周目）`);
+        const editedWav = encodeWav16k(extractEditedAudio(channel, sampleRate, segs), sampleRate);
+        const qRes = await fetch("/api/video-qa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio: await wavToB64(editedWav), cues: pro.cues }),
+        });
+        const q = await qRes.json();
+        if (q.error) { log(`⚠ 採点スキップ（${q.error}）`); break; }
+
+        score = q.score;
+        issues = (q.issues ?? []).map((x: { note: string }) => x.note);
+        reshoot = q.reshoot ?? [];
+        advice = q.advice || advice;
+        log(`📱 SNSコンサル採点：${score}点${score !== null && score >= 90 ? " 🎉 合格！" : ""}`);
+
+        if (score !== null && score >= 90) break;
+        if (!Array.isArray(q.removeMore) || q.removeMore.length === 0) break;
+
+        // 追加削除指示（編集後タイムライン）→ 元タイムラインに変換して反映
+        const removesOriginal = q.removeMore.map((r: { start: number; end: number }) => ({
+          start: speechTimeToOriginal(r.start, segs),
+          end: speechTimeToOriginal(r.end, segs),
+        }));
+        segs = subtractRanges(segs, removesOriginal);
+        log(`🔁 ${q.removeMore.length}箇所を追加カットして再編集…`);
       }
-      setDirectorAdvice(data.advice || (data.remove.length === 0 ? "問題なし！このまま編集してOKです" : ""));
+
+      setSegments(segs);
+      setLineTimings(timings);
+      setQaReport({ score, iterations: Math.min(iter, 3), fixes: allFixes, issues, reshoot, advice });
+      log("✅ QA完了：書き出し準備OK");
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "AI監督の解析に失敗しました");
+      setErrorMsg(e instanceof Error ? e.message : "自動QAに失敗しました（手動でそのまま書き出しは可能です）");
     }
-    setDirecting(false);
+    setQaRunning(false);
   };
 
   // 言語ごとのSRTテキスト生成用：日中2段組は1つの字幕に2行
@@ -234,12 +321,14 @@ export default function EditorTab() {
         const isHook = c.start < 3; // 冒頭フックは大きく強調
         const enable = `enable=between(t\\,${c.start.toFixed(2)}\\,${c.end.toFixed(2)})`;
         const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
-        const size = isHook ? st.hookSize : st.fontsize;
+        // 見切れ防止：長い行はフォントを自動縮小（720px幅に収まるサイズへ）
+        const fit = (base: number, text: string) => Math.min(base, Math.max(26, Math.floor(660 / Math.max(1, text.length))));
+        const size = fit(isHook ? st.hookSize : st.fontsize, c.text);
         const color = isHook ? st.hookColor : st.color;
         if (lang === "ja") {
           drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}:${enable}`);
         } else if (lang === "zh") {
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}:${enable}`);
+          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${fit(isHook ? st.hookSize : st.fontsize, zhLines[i])}:fontcolor=${color}:y=${st.y}:${enable}`);
         } else {
           drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${Math.round(size * 0.94)}:fontcolor=${color}:y=${st.y}-42:${enable}`);
           if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=32:fontcolor=white@0.95:y=${st.y}+40:${enable}`);
@@ -352,21 +441,50 @@ export default function EditorTab() {
           </p>
         )}
 
-        {/* Gemini編集監督 */}
-        {segments.length > 0 && (
-          geminiReady ? (
-            <div className="space-y-2">
-              <button onClick={runDirector} disabled={directing}
-                className="w-full py-2.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-colors">
-                {directing ? "🧠 AI監督が視聴中…（30秒ほど）" : "🧠 AI監督チェック（言い淀み・噛みを自動検出してカット）"}
-              </button>
-              {removedCount > 0 && <p className="text-xs text-blue-300">✂️ AI監督が{removedCount}箇所の言い淀み・NG部分を追加カットしました</p>}
-              {lineTimings && <p className="text-xs text-blue-300">🎯 テロップのタイミングを実測値に合わせました（精度UP）</p>}
-              {directorAdvice && <p className="text-xs text-gray-400">💬 監督コメント：{directorAdvice}</p>}
+        {/* 自動QAパイプラインのライブログ */}
+        {segments.length > 0 && !geminiReady && (
+          <p className="text-xs text-gray-600">💡 GEMINI_API_KEYを設定すると、AI監督カット＋品質QAループが自動実行されます</p>
+        )}
+        {qaLog.length > 0 && (
+          <div className="bg-gray-800/60 border border-blue-900/40 rounded-xl p-3 space-y-1">
+            {qaLog.map((m, i) => (
+              <p key={i} className="text-xs text-gray-300">{m}</p>
+            ))}
+            {qaRunning && <div className="pt-1"><Spinner label="自動QA実行中…" /></div>}
+          </div>
+        )}
+
+        {/* QAレポート */}
+        {qaReport && !qaRunning && (
+          <div className="border border-blue-700/40 bg-blue-950/20 rounded-xl p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-blue-300">📋 品質QAレポート</p>
+              {qaReport.score !== null && (
+                <span className={`text-lg font-black ${qaReport.score >= 90 ? "text-green-400" : "text-orange-400"}`}>
+                  {qaReport.score}点{qaReport.score >= 90 ? " ✅" : ""}
+                </span>
+              )}
             </div>
-          ) : (
-            <p className="text-xs text-gray-600">💡 GEMINI_API_KEYを設定すると「AI監督チェック」（言い淀み自動カット）が使えます</p>
-          )
+            {qaReport.fixes.length > 0 && (
+              <div className="text-xs text-gray-300">
+                <p className="text-gray-500 mb-0.5">自動修正：</p>
+                {qaReport.fixes.map((f, i) => <p key={i}>・{f}</p>)}
+              </div>
+            )}
+            {qaReport.issues.length > 0 && (
+              <div className="text-xs text-orange-300">
+                <p className="text-orange-400/70 mb-0.5">⚠ カットでは直せない問題：</p>
+                {qaReport.issues.map((f, i) => <p key={i}>・{f}</p>)}
+              </div>
+            )}
+            {qaReport.reshoot.length > 0 && (
+              <div className="text-xs text-red-300">
+                <p className="text-red-400/70 mb-0.5">🎥 撮り直し推奨：</p>
+                {qaReport.reshoot.map((f, i) => <p key={i}>・{f}</p>)}
+              </div>
+            )}
+            {qaReport.advice && <p className="text-xs text-gray-400">💬 総評：{qaReport.advice}</p>}
+          </div>
         )}
       </div>
 
@@ -391,9 +509,9 @@ export default function EditorTab() {
             🎤 音声クリーンアップ（ノイズ除去＋音量をリール標準に正規化）
           </label>
 
-          <button onClick={render} disabled={phase === "rendering" || (lang !== "ja" && zhLines.length === 0)}
+          <button onClick={render} disabled={phase === "rendering" || qaRunning || (lang !== "ja" && zhLines.length === 0)}
             className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
-            {phase === "rendering" ? `処理中… ${progress}%` : "🎬 自動編集（カット＋中央テロップ）"}
+            {phase === "rendering" ? `処理中… ${progress}%` : qaRunning ? "自動QA完了までお待ちください…" : "🎬 書き出す（QA合格済みの内容で）"}
           </button>
           {lang !== "ja" && zhLines.length === 0 && (
             <p className="text-xs text-orange-400">⚠ 先に「🈶 中国語を生成」を押してください</p>

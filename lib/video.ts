@@ -233,6 +233,54 @@ export function encodeWav16k(channel: Float32Array, srcRate: number): Blob {
   return new Blob([header, pcm.buffer], { type: "audio/wav" });
 }
 
+// カット適用後の音声波形を再構成（QAでAIに「編集後の音」を試聴させるため）
+export function extractEditedAudio(channel: Float32Array, sampleRate: number, segments: Segment[]): Float32Array {
+  const totalSamples = segments.reduce((sum, s) => sum + Math.floor((s.end - s.start) * sampleRate), 0);
+  const out = new Float32Array(totalSamples);
+  let offset = 0;
+  for (const s of segments) {
+    const from = Math.floor(s.start * sampleRate);
+    const to = Math.min(channel.length, Math.floor(s.end * sampleRate));
+    out.set(channel.subarray(from, to), offset);
+    offset += to - from;
+  }
+  return out;
+}
+
+// 🎬 プロ編集家AI（機械チェック）：読み切れない字幕・見切れ・断片カットを自動修正
+export function proEditorPass(
+  cues: Cue[], segments: Segment[],
+): { cues: Cue[]; segments: Segment[]; fixes: string[] } {
+  const fixes: string[] = [];
+
+  // 0.25秒未満の断片区間は不自然なので除去
+  const cleanSegs = segments.filter(s => s.end - s.start >= 0.25);
+  if (cleanSegs.length < segments.length) {
+    fixes.push(`${segments.length - cleanSegs.length}個の断片カット（0.25秒未満）を整理`);
+  }
+
+  const total = cleanSegs.reduce((sum, s) => sum + (s.end - s.start), 0);
+  const out = cues.map(c => ({ ...c }));
+
+  // 読み切れない字幕（日本語の読速 ≒ 11文字/秒）を次の字幕までの空きに延長
+  let extended = 0;
+  for (let i = 0; i < out.length; i++) {
+    const minDur = Math.max(0.6, out[i].text.length / 11);
+    if (out[i].end - out[i].start < minDur) {
+      const limit = i + 1 < out.length ? out[i + 1].start : total;
+      const newEnd = Math.min(out[i].start + minDur, limit);
+      if (newEnd > out[i].end) { out[i].end = newEnd; extended++; }
+    }
+  }
+  if (extended > 0) fixes.push(`読み切れない字幕${extended}枚の表示時間を延長`);
+
+  // 見切れ対策：長い行はレンダリング時に自動縮小される（件数を報告のみ）
+  const longLines = out.filter(c => c.text.length > 15).length;
+  if (longLines > 0) fixes.push(`長い字幕${longLines}枚は見切れ防止のため自動縮小`);
+
+  return { cues: out.filter(c => c.end > c.start), segments: cleanSegs, fixes };
+}
+
 // CapCut等で手動カットする人向けの「残す区間」指示書
 export function generateCutSheet(segments: Segment[], originalDuration: number): string {
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
