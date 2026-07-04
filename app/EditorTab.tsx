@@ -19,7 +19,7 @@ function loadScripts(): StoredScript[] {
 
 function Spinner({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-gray-400">
+    <div className="flex items-center gap-2 text-xs text-[#5a6080]">
       <svg className="animate-spin w-3.5 h-3.5 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
@@ -379,36 +379,36 @@ export default function EditorTab() {
 
   const langBtn = (v: CaptionLang, label: string) => (
     <button onClick={() => setLang(v)}
-      className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${lang === v ? "border-[#0fa793] bg-[#0fa793]/30 text-[#2fd4be]" : "border-[#333a63] text-gray-400 hover:border-[#0fa793]/70"}`}>
+      className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${lang === v ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
       {label}
     </button>
   );
 
   return (
-    <div className="h-[calc(100vh-152px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-5 max-w-3xl">
-      <p className="text-sm text-gray-400 leading-relaxed">
-        撮影動画をアップ → <span className="text-[#2fd4be]">AI監督が言い淀みをチェック → 無音カット → 画面中央テロップ（日/中/2段組）</span>まで全自動。完成MP4はそのままインスタ投稿OK、微調整したい時はSRTをCapCutへ
+    <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-5 max-w-3xl">
+      <p className="text-sm text-[#5a6080] leading-relaxed">
+        撮影動画をアップ → <span className="text-[#5b6cff]">AI監督が言い淀みをチェック → 無音カット → 画面中央テロップ（日/中/2段組）</span>まで全自動。完成MP4はそのままインスタ投稿OK、微調整したい時はSRTをCapCutへ
       </p>
 
       {/* STEP 1: 台本選択 */}
-      <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-bold text-gray-200">① テロップにする台本を選ぶ</p>
+      <div className="border border-[#e3e5ef] bg-white rounded-2xl p-4 space-y-3">
+        <p className="text-sm font-bold text-[#1e2440]">① テロップにする台本を選ぶ</p>
         <select
           onChange={e => {
             const s = scripts.find(x => x.id === e.target.value);
             if (s) { setNarration(extractNarration(s.script).join("\n")); setZhLines([]); setZhHashtags(""); }
           }}
-          className="w-full bg-[#232849] border border-[#333a63] text-gray-200 text-sm rounded-xl p-2.5 focus:outline-none focus:border-[#0fa793]/50">
+          className="w-full bg-[#f1f2f7] border border-[#d6d9e6] text-[#1e2440] text-sm rounded-xl p-2.5 focus:outline-none focus:border-[#5b6cff]/50">
           <option value="">ライブラリから選択…</option>
           {scripts.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
         </select>
         <textarea value={narration} onChange={e => { setNarration(e.target.value); setZhLines([]); }} rows={5}
           placeholder="またはナレーションを直接貼り付け（1行＝テロップ1枚の目安）"
-          className="w-full bg-[#232849] border border-[#333a63] text-gray-200 text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#0fa793]/50" />
+          className="w-full bg-[#f1f2f7] border border-[#d6d9e6] text-[#1e2440] text-sm rounded-xl p-3 resize-none focus:outline-none focus:border-[#5b6cff]/50" />
 
         {/* テロップ言語 */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500">テロップ言語：</span>
+          <span className="text-xs text-[#7b809c]">テロップ言語：</span>
           {langBtn("ja", "🇯🇵 日本語")}
           {langBtn("zh", "🇨🇳 中国語")}
           {langBtn("both", "🇯🇵🇨🇳 2段組")}
@@ -420,22 +420,22 @@ export default function EditorTab() {
           )}
         </div>
         {lang !== "ja" && zhLines.length > 0 && (
-          <div className="text-xs text-gray-400 bg-[#232849]/60 rounded-xl p-3 space-y-1">
-            <p className="text-green-400">✅ 中国語テロップ {zhLines.length}行 生成済み</p>
-            {zhHashtags && <p className="text-red-300">中華圏向けタグ： {zhHashtags}</p>}
+          <div className="text-xs text-[#5a6080] bg-[#f1f2f7]/60 rounded-xl p-3 space-y-1">
+            <p className="text-green-600">✅ 中国語テロップ {zhLines.length}行 生成済み</p>
+            {zhHashtags && <p className="text-red-500">中華圏向けタグ： {zhHashtags}</p>}
           </div>
         )}
       </div>
 
       {/* STEP 2: 動画アップロード */}
-      <div className="border border-[#262b4a] bg-[#181b30] rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-bold text-gray-200">② 撮影した動画を選ぶ</p>
+      <div className="border border-[#e3e5ef] bg-white rounded-2xl p-4 space-y-3">
+        <p className="text-sm font-bold text-[#1e2440]">② 撮影した動画を選ぶ</p>
         <input type="file" accept="video/*"
           onChange={e => { const f = e.target.files?.[0]; if (f) analyze(f); }}
-          className="block w-full text-sm text-gray-400 file:mr-3 file:px-4 file:py-2 file:rounded-xl file:border-0 file:bg-[#0fa793] file:text-white file:font-bold file:text-xs hover:file:bg-[#12bfa8]" />
-        {phase === "analyzing" && <p className="text-xs text-gray-500">🔍 音声を解析中…</p>}
+          className="block w-full text-sm text-[#5a6080] file:mr-3 file:px-4 file:py-2 file:rounded-xl file:border-0 file:bg-[#1c2340] file:text-white file:font-bold file:text-xs hover:file:bg-[#2a3358]" />
+        {phase === "analyzing" && <p className="text-xs text-[#7b809c]">🔍 音声を解析中…</p>}
         {segments.length > 0 && (
-          <p className="text-xs text-green-400">
+          <p className="text-xs text-green-600">
             ✅ 解析完了：発話 {segments.length} 区間 ／ {duration.toFixed(1)}秒 → 約{keptDuration.toFixed(1)}秒（{(duration - keptDuration).toFixed(1)}秒カット）
             {cues.length > 0 && ` ／ テロップ ${cues.length}枚`}
           </p>
@@ -443,12 +443,12 @@ export default function EditorTab() {
 
         {/* 自動QAパイプラインのライブログ */}
         {segments.length > 0 && !geminiReady && (
-          <p className="text-xs text-gray-600">💡 GEMINI_API_KEYを設定すると、AI監督カット＋品質QAループが自動実行されます</p>
+          <p className="text-xs text-[#9ba0b8]">💡 GEMINI_API_KEYを設定すると、AI監督カット＋品質QAループが自動実行されます</p>
         )}
         {qaLog.length > 0 && (
-          <div className="bg-[#232849]/60 border border-blue-900/40 rounded-xl p-3 space-y-1">
+          <div className="bg-[#f1f2f7]/60 border border-blue-200 rounded-xl p-3 space-y-1">
             {qaLog.map((m, i) => (
-              <p key={i} className="text-xs text-gray-300">{m}</p>
+              <p key={i} className="text-xs text-[#2a3052]">{m}</p>
             ))}
             {qaRunning && <div className="pt-1"><Spinner label="自動QA実行中…" /></div>}
           </div>
@@ -456,72 +456,72 @@ export default function EditorTab() {
 
         {/* QAレポート */}
         {qaReport && !qaRunning && (
-          <div className="border border-blue-700/40 bg-blue-950/20 rounded-xl p-4 space-y-2">
+          <div className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-blue-300">📋 品質QAレポート</p>
+              <p className="text-sm font-bold text-blue-600">📋 品質QAレポート</p>
               {qaReport.score !== null && (
-                <span className={`text-lg font-black ${qaReport.score >= 90 ? "text-green-400" : "text-orange-400"}`}>
+                <span className={`text-lg font-black ${qaReport.score >= 90 ? "text-green-600" : "text-orange-500"}`}>
                   {qaReport.score}点{qaReport.score >= 90 ? " ✅" : ""}
                 </span>
               )}
             </div>
             {qaReport.fixes.length > 0 && (
-              <div className="text-xs text-gray-300">
-                <p className="text-gray-500 mb-0.5">自動修正：</p>
+              <div className="text-xs text-[#2a3052]">
+                <p className="text-[#7b809c] mb-0.5">自動修正：</p>
                 {qaReport.fixes.map((f, i) => <p key={i}>・{f}</p>)}
               </div>
             )}
             {qaReport.issues.length > 0 && (
               <div className="text-xs text-orange-300">
-                <p className="text-orange-400/70 mb-0.5">⚠ カットでは直せない問題：</p>
+                <p className="text-orange-500 mb-0.5">⚠ カットでは直せない問題：</p>
                 {qaReport.issues.map((f, i) => <p key={i}>・{f}</p>)}
               </div>
             )}
             {qaReport.reshoot.length > 0 && (
-              <div className="text-xs text-red-300">
-                <p className="text-red-400/70 mb-0.5">🎥 撮り直し推奨：</p>
+              <div className="text-xs text-red-500">
+                <p className="text-red-500/70 mb-0.5">🎥 撮り直し推奨：</p>
                 {qaReport.reshoot.map((f, i) => <p key={i}>・{f}</p>)}
               </div>
             )}
-            {qaReport.advice && <p className="text-xs text-gray-400">💬 総評：{qaReport.advice}</p>}
+            {qaReport.advice && <p className="text-xs text-[#5a6080]">💬 総評：{qaReport.advice}</p>}
           </div>
         )}
       </div>
 
       {/* STEP 3: 出力 */}
       {phase !== "idle" && phase !== "analyzing" && segments.length > 0 && (
-        <div className="border border-[#0fa793]/40 bg-[#0fa793]/10 rounded-2xl p-4 space-y-3">
-          <p className="text-sm font-bold text-[#2fd4be]">③ 書き出し</p>
+        <div className="border border-[#5b6cff]/40 bg-[#5b6cff]/10 rounded-2xl p-4 space-y-3">
+          <p className="text-sm font-bold text-[#5b6cff]">③ 書き出し</p>
 
           {/* テロップスタイル選択 */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-500">スタイル：</span>
+            <span className="text-xs text-[#7b809c]">スタイル：</span>
             {(Object.keys(STYLES) as StyleKey[]).map(k => (
               <button key={k} onClick={() => setStyle(k)} title={STYLES[k].desc}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${style === k ? "border-[#0fa793] bg-[#0fa793]/30 text-[#2fd4be]" : "border-[#333a63] text-gray-400 hover:border-[#0fa793]/70"}`}>
+                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${style === k ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
                 {STYLES[k].label}
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-600">{STYLES[style].desc} ／ 出力は縦9:16・720×1280・30fpsに自動整形</p>
-          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-teal-500" />
+          <p className="text-xs text-[#9ba0b8]">{STYLES[style].desc} ／ 出力は縦9:16・720×1280・30fpsに自動整形</p>
+          <label className="flex items-center gap-2 text-xs text-[#5a6080] cursor-pointer">
+            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-indigo-500" />
             🎤 音声クリーンアップ（ノイズ除去＋音量をリール標準に正規化）
           </label>
 
           <button onClick={render} disabled={phase === "rendering" || qaRunning || (lang !== "ja" && zhLines.length === 0)}
-            className="w-full py-3 bg-[#0fa793] hover:bg-[#2fd4be] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
+            className="w-full py-3 bg-[#5b6cff] hover:bg-[#5b6cff] disabled:opacity-50 text-black font-bold rounded-xl text-sm transition-colors">
             {phase === "rendering" ? `処理中… ${progress}%` : qaRunning ? "自動QA完了までお待ちください…" : "🎬 書き出す（QA合格済みの内容で）"}
           </button>
           {lang !== "ja" && zhLines.length === 0 && (
-            <p className="text-xs text-orange-400">⚠ 先に「🈶 中国語を生成」を押してください</p>
+            <p className="text-xs text-orange-500">⚠ 先に「🈶 中国語を生成」を押してください</p>
           )}
           {phase === "rendering" && (
             <div>
-              <div className="h-2 bg-[#232849] rounded-full overflow-hidden">
-                <div className="h-full bg-[#2fd4be] transition-all" style={{ width: `${progress}%` }} />
+              <div className="h-2 bg-[#f1f2f7] rounded-full overflow-hidden">
+                <div className="h-full bg-[#5b6cff] transition-all" style={{ width: `${progress}%` }} />
               </div>
-              <p className="text-xs text-gray-500 mt-1.5">{statusMsg}</p>
+              <p className="text-xs text-[#7b809c] mt-1.5">{statusMsg}</p>
             </div>
           )}
 
@@ -538,19 +538,19 @@ export default function EditorTab() {
           <div className="flex flex-wrap gap-2 pt-1">
             <button onClick={() => download("captions.srt", generateSRT(srtCues(), segments, true))}
               disabled={cues.length === 0}
-              className="flex-1 min-w-[140px] py-2 text-xs border border-[#333a63] hover:border-[#0fa793]/70 text-gray-300 rounded-xl disabled:opacity-40 transition-colors">
+              className="flex-1 min-w-[140px] py-2 text-xs border border-[#d6d9e6] hover:border-[#5b6cff] text-[#2a3052] rounded-xl disabled:opacity-40 transition-colors">
               📄 SRT字幕（CapCut微調整用）
             </button>
             <button onClick={() => download("cutsheet.txt", generateCutSheet(segments, duration))}
-              className="flex-1 min-w-[140px] py-2 text-xs border border-[#333a63] hover:border-[#0fa793]/70 text-gray-300 rounded-xl transition-colors">
+              className="flex-1 min-w-[140px] py-2 text-xs border border-[#d6d9e6] hover:border-[#5b6cff] text-[#2a3052] rounded-xl transition-colors">
               ✂️ カット指示書
             </button>
           </div>
-          <p className="text-xs text-gray-600">CapCutで微調整する場合：元動画＋SRTを読み込めばテロップが編集可能な状態で載ります</p>
+          <p className="text-xs text-[#9ba0b8]">CapCutで微調整する場合：元動画＋SRTを読み込めばテロップが編集可能な状態で載ります</p>
         </div>
       )}
 
-      {errorMsg && <p className="text-xs text-red-400 leading-relaxed">⚠ {errorMsg}</p>}
+      {errorMsg && <p className="text-xs text-red-500 leading-relaxed">⚠ {errorMsg}</p>}
     </div>
   );
 }
