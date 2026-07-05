@@ -9,7 +9,10 @@ export const maxDuration = 60;
 async function callGenerate(origin: string, feature: string, input: string, genre: string): Promise<string> {
   const res = await fetch(`${origin}/api/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-key": process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1",
+    },
     body: JSON.stringify({ feature, input, genre }),
   });
   const data = await res.json();

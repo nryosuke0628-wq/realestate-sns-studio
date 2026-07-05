@@ -6,7 +6,7 @@ import type { DashboardData } from "@/lib/studio-types";
 
 // ── Dashboard Tab ─────────────────────────────────────────────────────
 // 数値がカウントアップするフック
-function useCountUp(target: number, duration = 900): number {
+export function useCountUp(target: number, duration = 900): number {
   const [value, setValue] = useState(0);
   useEffect(() => {
     if (target === 0) { setValue(0); return; }
@@ -24,7 +24,7 @@ function useCountUp(target: number, duration = 900): number {
   return value;
 }
 
-function FollowerChart({ history }: { history: { followers: number; created_at: string }[] }) {
+export function FollowerChart({ history }: { history: { followers: number; created_at: string }[] }) {
   if (history.length < 2) return <p className="text-xs text-[#9ba0b8] py-6 text-center">データが2日分以上たまるとグラフが表示されます</p>;
   const W = 600, H = 160, PAD = 10;
   const vals = history.map(h => h.followers);

@@ -3,7 +3,13 @@
 import { useState, useEffect } from "react";
 import EditorTab from "./EditorTab";
 import RecordingPrompter from "./RecordingPrompter";
-import { currentGenre, saveLibraryItem } from "@/lib/studio-storage";
+import { currentGenre, saveLibraryItem, computeLibraryMetrics, fmtViews, type LibraryMetrics } from "@/lib/studio-storage";
+import { useCountUp, FollowerChart } from "./DashboardTab";
+
+interface FollowerData {
+  connected: boolean; current?: number; goal?: number; dailyGrowth?: number;
+  projectedDate?: string | null; history?: { followers: number; created_at: string }[];
+}
 
 // 🌅 Today：1日の作業がここで完結する画面
 // 深夜生成された台本 → 承認 → プロンプター撮影（or 動画ドロップ）→ 自動編集 → 完成
@@ -32,6 +38,26 @@ function Spinner({ label }: { label: string }) {
   );
 }
 
+function StatNumber({ value }: { value: number }) {
+  const animated = useCountUp(value);
+  return <>{animated.toLocaleString()}</>;
+}
+
+function MiniStat({ en, jp, num, unit, sub, subClass }: {
+  en: string; jp: string; num: string; unit?: string; sub: string; subClass?: string;
+}) {
+  return (
+    <div className="px-4 py-4">
+      <p className="text-[9px] text-[#9ba0b8] font-semibold tracking-widest uppercase">{en}</p>
+      <p className="text-[10px] text-[#7b809c] mb-1">{jp}</p>
+      <p className="text-2xl font-black text-[#171c33] leading-none">
+        {num}<span className="text-xs font-bold text-[#7b809c] ml-1">{unit}</span>
+      </p>
+      <p className={`text-[10px] mt-1.5 font-semibold ${subClass ?? "text-[#9ba0b8]"}`}>{sub}</p>
+    </div>
+  );
+}
+
 export default function TodayTab() {
   const [items, setItems] = useState<OvernightItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +71,8 @@ export default function TodayTab() {
   // 修正指示
   const [revId, setRevId] = useState<string | null>(null);
   const [revText, setRevText] = useState("");
+  const [metrics, setMetrics] = useState<LibraryMetrics | null>(null);
+  const [followerData, setFollowerData] = useState<FollowerData | null>(null);
 
   const reload = () => {
     fetch(`/api/library?genre=${currentGenre()}`).then(r => r.json())
@@ -55,7 +83,11 @@ export default function TodayTab() {
       })
       .catch(() => { setEnabled(false); setLoading(false); });
   };
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    setMetrics(computeLibraryMetrics());
+    fetch("/api/dashboard").then(r => r.json()).then(setFollowerData).catch(() => {});
+  }, []);
 
   // ✅ 承認：ローカル保存＋Threadsキュー投入＋サーバー側から消して撮影ステージへ
   const approve = async (item: OvernightItem) => {
@@ -161,11 +193,66 @@ export default function TodayTab() {
   }
 
   // ── 朝の承認ステージ ──
+  const current = followerData?.current ?? 0;
+  const goal = followerData?.goal ?? 10000;
+  const pct = Math.min(100, (current / goal) * 100);
+  const avg = metrics?.avgViews != null ? fmtViews(metrics.avgViews) : null;
+
   return (
     <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-5">
       <div>
         <h2 className="display-type text-xl text-[#171c33]">Today<span className="text-[#5b6cff]">.</span></h2>
         <p className="text-xs text-[#9ba0b8] mt-0.5">寝ている間にAIチームが作った今日の台本。承認→撮影→あとは全部自動</p>
+      </div>
+
+      {/* 🔥 気合の入る数字ダッシュボード */}
+      <div className="stagger grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* フォロワー・達成予測 */}
+        <div className="card-hover border border-[#5b6cff]/40 bg-[#5b6cff]/10 rounded-2xl p-5">
+          {followerData?.connected ? (
+            <>
+              <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+                <div>
+                  <p className="text-xs text-[#7b809c] mb-1">フォロワー</p>
+                  <p className="text-3xl font-black text-[#5b6cff]">
+                    <StatNumber value={current} />
+                    <span className="text-sm text-[#7b809c] font-normal ml-2">/ {goal.toLocaleString()}人</span>
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-[#7b809c]">1日平均 <span className="text-green-600 font-bold">+{followerData.dailyGrowth ?? 0}</span></p>
+                  {followerData.projectedDate && (
+                    <p className="text-xs text-[#5a6080] mt-1">📅 達成予測：<span className="text-[#5b6cff] font-bold">{new Date(followerData.projectedDate).toLocaleDateString("ja-JP")}</span></p>
+                  )}
+                </div>
+              </div>
+              <div className="h-2 bg-white rounded-full overflow-hidden mb-2">
+                <div className="h-full bg-gradient-to-r from-[#5b6cff] to-[#8b96ff] rounded-full transition-all duration-1000 ease-out" style={{ width: `${pct}%` }} />
+              </div>
+              <FollowerChart history={followerData.history ?? []} />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full py-4 text-center">
+              <p className="text-2xl mb-1">📈</p>
+              <p className="text-xs text-[#5a6080]">Instagram連携でフォロワー推移がここに表示されます</p>
+            </div>
+          )}
+        </div>
+
+        {/* ストック・撮影待ち・今週投稿・平均再生 */}
+        <div className="grid grid-cols-2 border border-[#e3e5ef] bg-white rounded-2xl divide-x divide-y divide-[#e3e5ef] overflow-hidden">
+          <MiniStat en="Stock" jp="ネタストック" num={metrics ? String(metrics.stock) : "—"}
+            sub={metrics && metrics.stockNew > 0 ? `+${metrics.stockNew} 今週追加` : "保留＋未着手"}
+            subClass={metrics && metrics.stockNew > 0 ? "text-green-600" : undefined} />
+          <MiniStat en="To Shoot" jp="撮影待ち" num={metrics ? String(metrics.toShoot) : "—"}
+            sub={metrics && metrics.toShoot > 0 ? "撮れば即投稿できます" : "撮影待ちなし"}
+            subClass={metrics && metrics.toShoot > 0 ? "text-orange-500" : undefined} />
+          <MiniStat en="Posted" jp="今週投稿" num={metrics ? String(metrics.posted) : "—"} unit={metrics ? `/ ${metrics.goal}` : ""}
+            sub={metrics && metrics.posted >= metrics.goal ? "🎉 今週の目標達成！" : metrics ? `残り${metrics.goal - metrics.posted}本` : ""}
+            subClass={metrics && metrics.posted >= metrics.goal ? "text-green-600" : undefined} />
+          <MiniStat en="Avg Views" jp="平均再生" num={avg ? avg.num : "—"} unit={avg?.unit}
+            sub={avg ? `実績${metrics?.perfCount}本から算出` : "投稿後に実績を記録すると表示"} />
+        </div>
       </div>
 
       {busy && <div className="bg-white border border-[#e3e5ef] rounded-xl p-4"><Spinner label={busy} /></div>}

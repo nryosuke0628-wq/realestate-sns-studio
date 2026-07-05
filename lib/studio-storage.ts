@@ -133,3 +133,41 @@ export function addBookmark(idea: string) {
 export function deleteBookmark(id: string) {
   localStorage.setItem(gKey("bookmarked_ideas"), JSON.stringify(loadBookmarks().filter(i => i.id !== id)));
 }
+
+// ── 台本ストックの実績統計（Todayタブの気合を入れるダッシュボード用） ──
+export interface LibraryMetrics {
+  stock: number; stockNew: number; toShoot: number;
+  posted: number; goal: number; avgViews: number | null; perfCount: number;
+}
+
+// 実績メモの「再生1.2万」「12,000再生」などから再生数を抽出
+export function parsePerfViews(perf: string): number | null {
+  const m = perf.match(/(?:再生|▶)\s*[:：]?\s*([\d,.]+)\s*(万)?/) ?? perf.match(/([\d,.]+)\s*(万)?\s*再生/);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  if (isNaN(n)) return null;
+  return m[2] === "万" ? n * 10000 : n;
+}
+export function fmtViews(v: number): { num: string; unit: string } {
+  return v >= 10000 ? { num: (v / 10000).toFixed(1), unit: "万" } : { num: Math.round(v).toLocaleString(), unit: "" };
+}
+
+export function computeLibraryMetrics(): LibraryMetrics {
+  const lib = loadLibrary();
+  const bms = loadBookmarks();
+  const weekAgo = Date.now() - 7 * 86400000;
+  const stockItems = lib.filter(i => i.status === "none");
+  const stock = bms.length + stockItems.length;
+  const stockNew = bms.filter(b => b.createdAt > weekAgo).length + stockItems.filter(i => i.createdAt > weekAgo).length;
+  const toShoot = lib.filter(i => i.status === "filming").length;
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+  const posted = lib.filter(i => i.status === "posted" && (i.postedAt ?? 0) >= monday.getTime()).length;
+  const views = lib.filter(i => i.status === "posted" && i.performance)
+    .map(i => parsePerfViews(i.performance!))
+    .filter((v): v is number => v !== null);
+  const avgViews = views.length > 0 ? views.reduce((a, b) => a + b, 0) / views.length : null;
+  return { stock, stockNew, toShoot, posted, goal: 5, avgViews, perfCount: views.length };
+}

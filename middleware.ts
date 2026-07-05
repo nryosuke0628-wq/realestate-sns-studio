@@ -9,8 +9,19 @@ async function sessionToken(pass: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+// サーバー内部（Cronルート→/api/generate等）専用の合言葉。ブラウザには一切送らないヘッダーなので
+// クライアントから偽装できない。APP_PASSWORD_SECRETと同じ値をベースにするので追加設定不要
+function internalKey(): string {
+  return process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1";
+}
+
 // アプリ全体をパスワードで保護（合言葉はVercel環境変数 APP_PASSWORD で変更可能）
 export async function middleware(request: NextRequest) {
+  // Cronパイプラインからのサーバー間呼び出し（例：/api/cron/overnight → /api/generate）
+  if (request.headers.get("x-internal-key") === internalKey()) {
+    return NextResponse.next();
+  }
+
   const pass = process.env.APP_PASSWORD ?? "2424";
   const expected = await sessionToken(pass);
   const auth = request.cookies.get("studio_auth")?.value;
