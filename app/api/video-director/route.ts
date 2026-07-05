@@ -36,13 +36,16 @@ ${captionBlock}
 - 長すぎる間
 確信がある箇所のみ。問題なければ空配列。
 
-【タスク2：テロップの実測タイミング（全行必須）】
+【タスク2：タイムスタンプ付き文字起こし】
+音声全体をフレーズ単位（句点・息継ぎ区切り）で文字起こしし、各フレーズの開始・終了秒数を付ける。言い直し・言い淀みもそのまま書き起こす（検出に使うため）。
+
+【タスク3：テロップの実測タイミング（全行必須）】
 各テロップ行が実際に話されている開始・終了秒数（元音声のタイムライン）を特定。
 **全ての行番号を必ず含めること（省略禁止）**。聞き取りに自信がない行も前後関係から最も妥当な推定値を出す。
 行は番号順で、時間は単調増加になるようにする。
 
 以下のJSON形式のみで回答：
-{"remove": [{"start": 秒数, "end": 秒数, "reason": "短い理由"}], "lines": [{"index": テロップ行番号, "start": 秒数, "end": 秒数}], "advice": "全体への一言アドバイス"}`;
+{"remove": [{"start": 秒数, "end": 秒数, "reason": "短い理由"}], "transcript": [{"start": 秒数, "end": 秒数, "text": "フレーズ"}], "lines": [{"index": テロップ行番号, "start": 秒数, "end": 秒数}], "advice": "全体への一言アドバイス"}`;
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -70,12 +73,16 @@ ${captionBlock}
       ? parsed.remove.filter((r: { start: unknown; end: unknown }) =>
           typeof r.start === "number" && typeof r.end === "number" && r.end > r.start)
       : [];
+    const transcript = Array.isArray(parsed.transcript)
+      ? parsed.transcript.filter((p: { start: unknown; end: unknown; text: unknown }) =>
+          typeof p.start === "number" && typeof p.end === "number" && typeof p.text === "string" && p.end > p.start)
+      : [];
     const lines = Array.isArray(parsed.lines)
       ? parsed.lines.filter((l: { index: unknown; start: unknown; end: unknown }) =>
           typeof l.index === "number" && typeof l.start === "number" && typeof l.end === "number" && l.end > l.start)
       : [];
 
-    return NextResponse.json({ remove, lines, advice: parsed.advice ?? "" });
+    return NextResponse.json({ remove, transcript, lines, advice: parsed.advice ?? "" });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "解析に失敗しました";
     return NextResponse.json({ error: msg }, { status: 500 });

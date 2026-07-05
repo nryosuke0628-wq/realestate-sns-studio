@@ -288,3 +288,71 @@ export function generateCutSheet(segments: Segment[], originalDuration: number):
   const header = `■ ジャンプカット指示書\n元動画：${fmt(originalDuration)} → カット後：約${fmt(kept)}（${(originalDuration - kept).toFixed(1)}秒短縮）\n\n【残す区間】\n`;
   return header + segments.map((s, i) => `${String(i + 1).padStart(2, " ")}. ${fmt(s.start)} 〜 ${fmt(s.end)}`).join("\n");
 }
+
+// ── 言い直し（リテイク）検出 ──────────────────────────────
+export interface Phrase { start: number; end: number; text: string }
+
+function normText(s: string): string {
+  return s.replace(/[、。！？!?,.\s「」…・〜ー]/g, "");
+}
+
+// バイグラムDice係数（0〜1）で文の類似度を測る
+function similarity(a: string, b: string): number {
+  if (a.length < 2 || b.length < 2) return 0;
+  const grams = (s: string) => {
+    const set = new Map<string, number>();
+    for (let i = 0; i < s.length - 1; i++) {
+      const g = s.slice(i, i + 2);
+      set.set(g, (set.get(g) ?? 0) + 1);
+    }
+    return set;
+  };
+  const ga = grams(a), gb = grams(b);
+  let overlap = 0;
+  ga.forEach((c, g) => { overlap += Math.min(c, gb.get(g) ?? 0); });
+  return (2 * overlap) / (a.length - 1 + b.length - 1);
+}
+
+// 同じ・ほぼ同じフレーズが近くで2回出てくる＝言い直し。
+// 「あとに言った方が本命」の原則で、前の失敗テイクをカット対象にする
+export function detectRetakes(transcript: Phrase[]): Phrase[] {
+  const cuts: Phrase[] = [];
+  for (let i = 0; i < transcript.length; i++) {
+    const a = normText(transcript[i].text);
+    if (a.length < 6) continue;
+    // 言い直しは直後〜3フレーズ以内に来る
+    for (let j = i + 1; j < Math.min(transcript.length, i + 4); j++) {
+      const b = normText(transcript[j].text);
+      if (b.length < 6) continue;
+      const shorter = a.length <= b.length ? a : b;
+      const longer = a.length <= b.length ? b : a;
+      if (longer.includes(shorter) || similarity(a, b) >= 0.75) {
+        cuts.push({ ...transcript[i] });
+        break;
+      }
+    }
+  }
+  return cuts;
+}
+
+// カットの復元用：区間を発話区間リストに戻す（マージ）
+export function mergeRange(segments: Segment[], range: Segment): Segment[] {
+  const all = [...segments, { start: range.start, end: range.end }].sort((x, y) => x.start - y.start);
+  const out: Segment[] = [];
+  for (const s of all) {
+    const last = out[out.length - 1];
+    if (last && s.start <= last.end + 0.05) last.end = Math.max(last.end, s.end);
+    else out.push({ ...s });
+  }
+  return out;
+}
+
+// 指示テキストに一致するフレーズを文字起こしから探してカット範囲にする
+export function findPhraseRanges(transcript: Phrase[], phrase: string): Phrase[] {
+  const target = normText(phrase);
+  if (target.length < 3) return [];
+  return transcript.filter(p => {
+    const t = normText(p.text);
+    return t.includes(target) || target.includes(t) || similarity(t, target) >= 0.7;
+  });
+}

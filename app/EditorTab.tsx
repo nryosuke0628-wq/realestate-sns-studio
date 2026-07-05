@@ -6,6 +6,7 @@ import {
   detectSpeechSegments, allocateCues, generateSRT, generateCutSheet,
   subtractRanges, encodeWav16k, cuesFromTimings,
   extractEditedAudio, proEditorPass, speechTimeToOriginal, originalToSpeechTime,
+  Phrase, detectRetakes, mergeRange, findPhraseRanges,
 } from "@/lib/video";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
@@ -88,6 +89,14 @@ export default function EditorTab() {
   // スタイル・仕上げ
   const [style, setStyle] = useState<StyleKey>("classic");
   const [shift, setShift] = useState(0); // テロップ全体の時間シフト（秒）
+  const [speed, setSpeed] = useState(1);       // 倍速（自動設定・手動上書き可）
+  const [autoSpeed, setAutoSpeed] = useState<number | null>(null);
+  const [capOffset, setCapOffset] = useState(0); // テロップ位置の追加オフセット(px)
+  const [transcript, setTranscript] = useState<Phrase[]>([]);
+  const [retakeCuts, setRetakeCuts] = useState<(Phrase & { applied: boolean })[]>([]);
+  const [instruction, setInstruction] = useState("");
+  const [instructing, setInstructing] = useState(false);
+  const [instructLog, setInstructLog] = useState<string[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [audioClean, setAudioClean] = useState(true);
@@ -103,6 +112,7 @@ export default function EditorTab() {
   const analyze = async (f: File) => {
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
     setQaReport(null); setQaLog([]); setLineTimings(null); setShift(0);
+    setSpeed(1); setAutoSpeed(null); setCapOffset(0); setTranscript([]); setRetakeCuts([]); setInstructLog([]);
     setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
     pipelineDoneRef.current = "";
     try {
@@ -203,6 +213,18 @@ export default function EditorTab() {
       let segs = d.remove.length > 0 ? subtractRanges(segments, d.remove) : segments;
       log(d.remove.length > 0 ? `🧠 AI監督：${d.remove.length}箇所の言い淀み・NGをカット` : "🧠 AI監督：カット不要、良いテイクです");
 
+      // 文字起こしベースの言い直し検出（同じフレーズが2回→前の失敗テイクをカット）
+      const tr: Phrase[] = Array.isArray(d.transcript) ? d.transcript : [];
+      setTranscript(tr);
+      if (tr.length > 0) {
+        const retakes = detectRetakes(tr);
+        if (retakes.length > 0) {
+          segs = subtractRanges(segs, retakes);
+          setRetakeCuts(retakes.map(r => ({ ...r, applied: true })));
+          log(`✂️ 言い直し検出：${retakes.length}箇所を自動カット（${retakes.map(r => `「${r.text.slice(0, 12)}…」`).join(" ")}）`);
+        }
+      }
+
       let timings: ({ start: number; end: number } | undefined)[] | null = null;
       if (Array.isArray(d.lines) && caps.length > 0) {
         const t: ({ start: number; end: number } | undefined)[] = [];
@@ -262,6 +284,17 @@ export default function EditorTab() {
         log(`🔁 ${q.removeMore.length}箇所を追加カットして再編集…`);
       }
 
+      // ⚡ 自動倍速：話速を実測してバズ標準テンポ（約7.2文字/秒）に合わせる
+      const totalChars = caps.reduce((sum, c) => sum + c.length, 0);
+      const keptDur = segs.reduce((sum, s) => sum + (s.end - s.start), 0);
+      if (totalChars > 0 && keptDur > 3) {
+        const measured = totalChars / keptDur;
+        const rate = Math.min(1.3, Math.max(1.0, Math.round((7.2 / measured) * 20) / 20));
+        setSpeed(rate);
+        setAutoSpeed(rate);
+        log(`⚡ 話速 ${measured.toFixed(1)}文字/秒 → 自動倍速 ${rate}x に設定`);
+      }
+
       setSegments(segs);
       setLineTimings(timings);
       setQaReport({ score, iterations: Math.min(iter, 3), fixes: allFixes, issues, reshoot, advice });
@@ -270,6 +303,48 @@ export default function EditorTab() {
       setErrorMsg(e instanceof Error ? e.message : "自動QAに失敗しました（手動でそのまま書き出しは可能です）");
     }
     setQaRunning(false);
+  };
+
+  // 言い直しカットの復元/再適用
+  const toggleRetake = (idx: number) => {
+    setRetakeCuts(prev => {
+      const cut = prev[idx];
+      setSegments(s => cut.applied ? mergeRange(s, cut) : subtractRanges(s, [cut]));
+      return prev.map((c, i) => i === idx ? { ...c, applied: !c.applied } : c);
+    });
+  };
+
+  // 💬 編集後の修正指示：AIが編集パラメータに変換して即適用
+  const applyInstruction = async () => {
+    if (!instruction.trim()) return;
+    setInstructing(true);
+    try {
+      const res = await fetch("/api/edit-instruct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction, transcript, cues, currentSpeed: speed, currentShift: shift }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      let applied: string[] = [];
+      if (data.cutPhrases.length > 0 && transcript.length > 0) {
+        const ranges: Phrase[] = [];
+        for (const p of data.cutPhrases) ranges.push(...findPhraseRanges(transcript, p));
+        if (ranges.length > 0) {
+          setSegments(s => subtractRanges(s, ranges));
+          applied.push(`${ranges.length}箇所をカット`);
+        }
+      }
+      if (data.speed !== null) { setSpeed(data.speed); applied.push(`倍速${data.speed}x`); }
+      if (data.shiftDelta !== null) { setShift(s => Math.round((s + data.shiftDelta) * 10) / 10); applied.push(`テロップ${data.shiftDelta > 0 ? "遅く" : "早く"}`); }
+      if (data.captionOffset !== null) { setCapOffset(o => o + data.captionOffset); applied.push(`テロップ位置${data.captionOffset > 0 ? "下へ" : "上へ"}`); }
+      setInstructLog(prev => [...prev, `💬 ${data.reply}${applied.length ? `（${applied.join("・")}）` : ""}`]);
+      setInstruction("");
+      setOutputUrl(null); // 変更後は再書き出しが必要
+    } catch (e) {
+      setInstructLog(prev => [...prev, `⚠ ${e instanceof Error ? e.message : "失敗しました"}`]);
+    }
+    setInstructing(false);
   };
 
   // 全体シフトを適用したCue（プレビュー・書き出し共通）
@@ -337,32 +412,38 @@ export default function EditorTab() {
 
       const st = STYLES[style];
       const drawParts: string[] = [];
+      const offExpr = capOffset === 0 ? "" : capOffset > 0 ? `+${capOffset}` : `${capOffset}`;
       for (let i = 0; i < shiftedCues.length; i++) {
         const c = shiftedCues[i];
         const isHook = c.start < 3; // 冒頭フックは大きく強調
-        const enable = `enable=between(t\\,${c.start.toFixed(2)}\\,${c.end.toFixed(2)})`;
+        // 倍速適用後の出力タイムラインに合わせて表示時刻を換算
+        const enable = `enable=between(t\\,${(c.start / speed).toFixed(2)}\\,${(c.end / speed).toFixed(2)})`;
         const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
         // 見切れ防止：長い行はフォントを自動縮小（720px幅に収まるサイズへ）
         const fit = (base: number, text: string) => Math.min(base, Math.max(26, Math.floor(660 / Math.max(1, text.length))));
         const size = fit(isHook ? st.hookSize : st.fontsize, c.text);
         const color = isHook ? st.hookColor : st.color;
         if (lang === "ja") {
-          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}:${enable}`);
+          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}${offExpr}:${enable}`);
         } else if (lang === "zh") {
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${fit(isHook ? st.hookSize : st.fontsize, zhLines[i])}:fontcolor=${color}:y=${st.y}:${enable}`);
+          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${fit(isHook ? st.hookSize : st.fontsize, zhLines[i])}:fontcolor=${color}:y=${st.y}${offExpr}:${enable}`);
         } else {
-          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${Math.round(size * 0.94)}:fontcolor=${color}:y=${st.y}-42:${enable}`);
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=32:fontcolor=white@0.95:y=${st.y}+40:${enable}`);
+          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${Math.round(size * 0.94)}:fontcolor=${color}:y=${st.y}-42${offExpr}:${enable}`);
+          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=32:fontcolor=white@0.95:y=${st.y}+40${offExpr}:${enable}`);
         }
       }
       // 横撮り・スクエアでも中央を切り出して縦9:16（720x1280）30fpsに統一
-      const normalize = `crop='min(iw,ih*9/16)':ih,scale=720:1280,fps=30`;
+      const speedV = speed !== 1 ? `setpts=PTS/${speed},` : "";
+      const normalize = `${speedV}crop='min(iw,ih*9/16)':ih,scale=720:1280,fps=30`;
       const graph =
         `${trims}${concatInputs}concat=n=${N}:v=1:a=1[vc][ac];` +
         `[vc]${normalize}${drawParts.length ? "," + drawParts.join(",") : ""}[vo]`;
-      // 音声クリーンアップ：ノイズ除去＋音量正規化（リール標準の-16LUFS）
-      const audioGraph = audioClean ? `;[ac]afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11[ao]` : "";
-      const audioMap = audioClean ? "[ao]" : "[ac]";
+      // 音声チェーン：倍速（音程維持）＋ノイズ除去＋音量正規化
+      const audioFilters: string[] = [];
+      if (speed !== 1) audioFilters.push(`atempo=${speed}`);
+      if (audioClean) audioFilters.push("afftdn=nf=-25", "loudnorm=I=-16:TP=-1.5:LRA=11");
+      const audioGraph = audioFilters.length > 0 ? `;[ac]${audioFilters.join(",")}[ao]` : "";
+      const audioMap = audioFilters.length > 0 ? "[ao]" : "[ac]";
 
       setStatusMsg("編集中…（動画の長さの2〜5倍の時間がかかります）");
       const baseArgs = (g: string, amap: string) => [
@@ -375,9 +456,10 @@ export default function EditorTab() {
       ];
       const code = await ffmpeg.exec(baseArgs(graph + audioGraph, audioMap));
       if (code !== 0 && audioClean) {
-        // 音声フィルタ非対応環境ではクリーンアップなしで再試行
+        // クリーンアップ非対応環境では倍速のみで再試行
         setStatusMsg("音声フィルタ非対応のため再試行中…");
-        const retry = await ffmpeg.exec(baseArgs(graph, "[ac]"));
+        const retryGraph = speed !== 1 ? `;[ac]atempo=${speed}[ao]` : "";
+        const retry = await ffmpeg.exec(baseArgs(graph + retryGraph, retryGraph ? "[ao]" : "[ac]"));
         if (retry !== 0) throw new Error("動画の書き出しに失敗しました");
       } else if (code !== 0) {
         throw new Error("動画の書き出しに失敗しました");
@@ -519,6 +601,7 @@ export default function EditorTab() {
             <div className="space-y-2">
               <div className="relative bg-black rounded-xl overflow-hidden max-w-[280px] mx-auto">
                 <video src={previewUrl} controls playsInline
+                  ref={v => { if (v) v.playbackRate = speed; }}
                   onTimeUpdate={e => setPreviewTime((e.target as HTMLVideoElement).currentTime)}
                   className="w-full aspect-[9/16] object-cover" />
                 {activeCueIdx >= 0 && (
@@ -544,7 +627,17 @@ export default function EditorTab() {
                 <button onClick={() => setShift(s => Math.round((s + 0.2) * 10) / 10)}
                   className="btn-pop px-2.5 py-1 border border-[#d6d9e6] rounded-lg text-[#2a3052]">0.2秒遅く ▶</button>
               </div>
-              <p className="text-xs text-[#9ba0b8] text-center">※プレビューは元動画のまま再生されます（無音カットは書き出し時に適用）</p>
+              {/* 倍速設定（自動＋手動上書き） */}
+              <div className="flex items-center justify-center gap-1.5 text-xs flex-wrap">
+                <span className="text-[#7b809c]">⚡ 倍速：</span>
+                {[1.0, 1.05, 1.1, 1.15, 1.2, 1.3].map(r => (
+                  <button key={r} onClick={() => setSpeed(r)}
+                    className={`btn-pop px-2 py-1 rounded-lg border transition-colors ${speed === r ? "border-[#5b6cff] bg-[#eef0ff] text-[#5b6cff] font-bold" : "border-[#d6d9e6] text-[#5a6080]"}`}>
+                    {r}x{autoSpeed === r ? " (自動)" : ""}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-[#9ba0b8] text-center">※プレビューは元動画に倍速のみ反映（無音カットは書き出し時に適用）</p>
             </div>
           )}
           {shiftedCues.length === 0 && (
@@ -592,6 +685,40 @@ export default function EditorTab() {
               </a>
             </div>
           )}
+
+          {/* 言い直しカット一覧（誤検出はワンタップ復元） */}
+          {retakeCuts.length > 0 && (
+            <div className="border border-[#e3e5ef] bg-[#f1f2f7] rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-bold text-[#2a3052]">✂️ 言い直しカット（間違っていたら復元できます）</p>
+              {retakeCuts.map((c, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className={`flex-1 text-xs truncate ${c.applied ? "text-[#5a6080] line-through" : "text-[#1e2440]"}`}>
+                    「{c.text}」<span className="text-[#9ba0b8]">（{c.start.toFixed(1)}s）</span>
+                  </span>
+                  <button onClick={() => toggleRetake(i)}
+                    className="btn-pop text-xs px-2 py-0.5 rounded-lg border border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff] shrink-0">
+                    {c.applied ? "↩︎ 復元" : "✂️ 再カット"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 💬 修正指示ボックス */}
+          <div className="border border-[#5b6cff]/30 bg-white rounded-xl p-3 space-y-2">
+            <p className="text-xs font-bold text-[#5b6cff]">💬 修正指示（AIが編集に反映します）</p>
+            {instructLog.map((m, i) => <p key={i} className="anim-in text-xs text-[#5a6080]">{m}</p>)}
+            <div className="flex gap-2">
+              <input value={instruction} onChange={e => setInstruction(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && !instructing && applyInstruction()}
+                placeholder="例：「住宅ローンが」って2回言ってる所カット／間を詰めてテンポよく／テロップ少し下"
+                className="flex-1 bg-[#f1f2f7] border border-[#d6d9e6] text-[#1e2440] text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#5b6cff] placeholder:text-[#a6abc2]" />
+              <button onClick={applyInstruction} disabled={instructing || !instruction.trim()}
+                className="btn-pop px-3 py-2 bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-40 text-white text-xs font-bold rounded-lg shrink-0">
+                {instructing ? "解釈中…" : "適用"}
+              </button>
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-2 pt-1">
             <button onClick={() => download("captions.srt", generateSRT(srtCues(), segments, true))}
