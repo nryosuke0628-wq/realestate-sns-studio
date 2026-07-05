@@ -640,8 +640,9 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
           {viralOpen && (
             <div className="anim-in w-full max-w-2xl mt-4 border border-[#5b6cff]/40 bg-white rounded-2xl p-4 space-y-3">
               <p className="text-xs text-[#5a6080] leading-relaxed">
-                参考にしたいバズ投稿があれば貼ってください（URL・内容・ジャンル問わず、複数OK）。
-                <span className="text-[#5b6cff] font-semibold">貼った投稿が最優先の参考元</span>になります。空欄ならAIがジャンル横断で収集します。
+                参考にしたいバズ投稿があれば貼ってください（複数OK）。
+                <span className="text-red-500 font-semibold">⚠ InstagramのURLは中身を読み取れないため、URLだけでなく「何を話してる投稿か・フックの言葉・再生数」を一言添えてください。</span>
+                その説明が最優先の参考元になります。空欄ならAIがジャンル横断で収集します。
               </p>
               <textarea value={viralInput} onChange={e => setViralInput(e.target.value)} rows={4}
                 placeholder={"例：\n・https://www.instagram.com/reel/xxxx（美容系・50万再生）フックは「毛穴ケア、9割が間違ってます」\n・TikTokで見た「新卒1年目に戻れるなら」系の語りが伸びてた"}

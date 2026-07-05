@@ -86,6 +86,23 @@ async function searchWeb(query: string, domains?: string[]): Promise<string> {
   } catch { return ""; }
 }
 
+// 入力内のURLから本文取得を試みる（viral_convert用）。Instagramは取得不可のことが多い
+async function extractUrlContents(input: string): Promise<string> {
+  if (!process.env.TAVILY_API_KEY) return "";
+  const urls = (input.match(/https?:\/\/[^\s)）」】、。]+/g) ?? []).slice(0, 3);
+  if (urls.length === 0) return "";
+  try {
+    const client = tavily({ apiKey: process.env.TAVILY_API_KEY });
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+    const result = await Promise.race([client.extract(urls), timeout]);
+    if (!result || !("results" in result)) return "";
+    return result.results
+      .filter(r => r.rawContent)
+      .map(r => `● ${r.url}\n${String(r.rawContent).slice(0, 800)}`)
+      .join("\n\n");
+  } catch { return ""; }
+}
+
 const currentYear = new Date().getFullYear();
 const currentMonth = new Date().getMonth() + 1;
 
@@ -131,6 +148,16 @@ export async function POST(request: NextRequest) {
 
     const today = new Date();
     let systemPrompt = `【最重要】今日は${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日です。「現在」「今」「最新」と書く場合は必ずこの年月を使うこと。学習データ上の古い日付（2025年など）を「現在」として書くことを禁止します。\n\n` + (promptMap[feature] ?? DEBATE_PROMPTS.trend_collect);
+
+    // バズ逆算モード：貼られたURLの本文取得を試みる
+    if (feature === "viral_convert" && typeof input === "string" && input.includes("http")) {
+      const extracted = await extractUrlContents(input);
+      if (extracted) {
+        systemPrompt += `\n\n【URLから取得できた内容】\n${extracted}`;
+      } else {
+        systemPrompt += `\n\n【注意】URLの中身は取得できなかった。ユーザーが書いた説明文と、URLから分かる情報のみを使うこと。取得できなかったことを出力の冒頭で正直に一言伝え、内容の推測で投稿を「見たかのように」語ることは禁止。`;
+      }
+    }
 
     const searchKey = feature === "trend_collect" && genre === "coaching" ? "trend_collect_coaching" : feature;
     if (SEARCH_MAP[searchKey]) {
