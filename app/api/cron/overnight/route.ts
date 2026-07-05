@@ -58,8 +58,11 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
   const results: Record<string, unknown> = {};
 
-  // 3ジャンルを並列実行（直列だと60秒の実行時間上限を超えるため）
-  await Promise.all(GENRES.map(async (genre) => {
+  // ?genre=xxx なら単ジャンルのみ（Todayタブの「作り直し」用）。指定なしは3ジャンル並列
+  const only = request.nextUrl.searchParams.get("genre");
+  const genres = only && GENRES.includes(only) ? [only] : GENRES;
+
+  await Promise.all(genres.map(async (genre) => {
     try {
       // ① 今日の3案（リーチ最大化目的で自動選定）
       const picksRes = await callGenerate(origin, "daily_picks", "【今日の目的】リーチ最大化", genre);

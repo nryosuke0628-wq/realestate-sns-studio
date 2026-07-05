@@ -60,7 +60,8 @@ const STYLES: Record<StyleKey, {
   karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",     y: "h-th-120",   fontsize: 44, hookSize: 56, color: "0x7DE8FF", hookColor: "0x7DE8FF" },
 };
 
-export default function EditorTab() {
+// presetNarration: Todayタブから承認済み台本を引き継ぐ / injectedFile: 撮影プロンプターの録画をそのまま流し込む
+export default function EditorTab({ presetNarration, injectedFile }: { presetNarration?: string; injectedFile?: File | null } = {}) {
   const [scripts, setScripts] = useState<StoredScript[]>([]);
   const [narration, setNarration] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -150,6 +151,16 @@ export default function EditorTab() {
     runQaPipeline();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, segments.length, narration, geminiReady]);
+
+  // Todayタブからの引き継ぎ：台本→ナレーション自動セット、録画ファイル→即解析開始
+  useEffect(() => {
+    if (presetNarration) { setNarration(extractNarration(presetNarration).join("\n")); setZhLines([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetNarration]);
+  useEffect(() => {
+    if (injectedFile) analyze(injectedFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injectedFile]);
 
   // ナレーション・区間・実測タイミングが変わったらテロップ割り付けを再計算
   useEffect(() => {

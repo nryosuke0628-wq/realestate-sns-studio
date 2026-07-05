@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import EditorTab from "./EditorTab";
+import TodayTab from "./TodayTab";
 import Teleprompter from "./Teleprompter";
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -1821,7 +1822,7 @@ export default function Home() {
   };
 
   const tabs: { key: Tab; en: string; jp: string }[] = [
-    { key: "picks",     en: "Today",   jp: "今日の3案" },
+    { key: "picks",     en: "Today",   jp: "今日" },
     { key: "weekly",    en: "Plan",    jp: "週間プラン" },
     { key: "script",    en: "Script",  jp: "台本生成" },
     { key: "library",   en: "Stock",   jp: "ライブラリ" },
@@ -1881,7 +1882,7 @@ export default function Home() {
         </div>
       </nav>
       <main key={`${tab}-${genre}`} className="anim-in mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
-        {tab === "picks"   && <PicksTab goScript={() => setTab("script")} />}
+        {tab === "picks"   && <TodayTab />}
         {tab === "weekly"  && <WeeklyTab goScript={() => setTab("script")} />}
         {tab === "script"  && <ScriptTab />}
         {tab === "library" && <LibraryTab />}
