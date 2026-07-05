@@ -5,9 +5,9 @@ interface ThreadsCreds { userId: string; token: string }
 // 環境変数の対応：
 //   realestate: THREADS_USER_ID / THREADS_ACCESS_TOKEN
 //   coaching:   THREADS_USER_ID_COACHING / THREADS_ACCESS_TOKEN_COACHING
-//   ai:         THREADS_USER_ID_AI / THREADS_ACCESS_TOKEN_AI
+//   sales:      THREADS_USER_ID_SALES / THREADS_ACCESS_TOKEN_SALES
 function credsFor(genre: string): ThreadsCreds | null {
-  const suffix = genre === "coaching" ? "_COACHING" : genre === "ai" ? "_AI" : "";
+  const suffix = genre === "coaching" ? "_COACHING" : genre === "sales" ? "_SALES" : "";
   const userId = process.env[`THREADS_USER_ID${suffix}`];
   const token = process.env[`THREADS_ACCESS_TOKEN${suffix}`];
   return userId && token ? { userId, token } : null;

@@ -6,7 +6,7 @@ import Teleprompter from "./Teleprompter";
 
 // ── Types ─────────────────────────────────────────────────────────────
 type Tab = "picks" | "weekly" | "script" | "library" | "editor" | "dashboard" | "news" | "analyze";
-type Genre = "realestate" | "coaching" | "ai";
+type Genre = "realestate" | "coaching" | "sales";
 
 interface DashboardData {
   connected: boolean;
@@ -1707,12 +1707,12 @@ function PicksTab({ goScript }: { goScript: () => void }) {
 const GENRE_META: Record<Genre, { btn: string; tagline: string; engine: string }> = {
   realestate: { btn: "🏠 不動産",     tagline: "不動産アカウントを、仕組みで伸ばす。", engine: "Real Estate Growth Engine" },
   coaching:   { btn: "🎯 コーチング", tagline: "コーチング発信を、仕組みで伸ばす。",   engine: "Coaching Growth Engine" },
-  ai:         { btn: "🤖 AI",         tagline: "AI発信を、仕組みで伸ばす。",           engine: "AI Growth Engine" },
+  sales:      { btn: "💼 営業",       tagline: "営業ノウハウを、仕組みで伸ばす。",     engine: "Sales Growth Engine" },
 };
 
 function applyGenreClass(g: Genre) {
   document.documentElement.classList.toggle("coaching", g === "coaching");
-  document.documentElement.classList.toggle("ai", g === "ai");
+  document.documentElement.classList.toggle("sales", g === "sales");
 }
 
 export default function Home() {
@@ -1722,7 +1722,7 @@ export default function Home() {
 
   useEffect(() => {
     const saved = localStorage.getItem("studio_genre");
-    const g: Genre = saved === "coaching" || saved === "ai" ? saved : "realestate";
+    const g: Genre = saved === "coaching" || saved === "sales" ? saved : "realestate";
     setGenre(g);
     applyGenreClass(g);
   }, []);

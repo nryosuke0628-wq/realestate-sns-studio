@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     const g = typeof genre === "string" && genre ? genre : "realestate";
     if (!threadsConfigured(g)) {
       return NextResponse.json(
-        { error: "このジャンルのThreadsアカウントが未連携です（不動産: THREADS_USER_ID / THREADS_ACCESS_TOKEN、コーチングは_COACHING・AIは_AIサフィックス付きで設定）" },
+        { error: "このジャンルのThreadsアカウントが未連携です（不動産: THREADS_USER_ID / THREADS_ACCESS_TOKEN、コーチングは_COACHING・営業は_SALESサフィックス付きで設定）" },
         { status: 500 }
       );
     }

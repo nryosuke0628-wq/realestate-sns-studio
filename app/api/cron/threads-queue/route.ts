@@ -4,7 +4,7 @@ import { postToThreads, threadsConfigured, cleanThreadsPost } from "@/lib/thread
 
 export const maxDuration = 60;
 
-const GENRES = ["realestate", "coaching", "ai"] as const;
+const GENRES = ["realestate", "coaching", "sales"] as const;
 
 // 毎日19:00 JSTに実行：ジャンルごとにキューの先頭1件（5連投稿）を自動投稿。
 // Threads未連携のジャンルはスキップし、キューに滞留させる（連携後に自動で流れ始める）
