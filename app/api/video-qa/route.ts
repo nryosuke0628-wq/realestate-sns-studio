@@ -30,9 +30,14 @@ ${cueList || "（字幕なし）"}
 4. テンポは良いか（不自然な間・冗長な部分がないか）
 5. 総合的にバズる編集品質か
 
+【追加タスク：Bロール計画】
+視聴維持率を上げるため、挿入映像・画像（Bロール）を入れるべき箇所を2〜4点提案。
+各提案には「何秒目に・どんな映像/画像を・なぜ」を含める。
+
 【出力】以下のJSON形式のみ：
 {
   "score": 0-100の整数（90以上が合格ライン）,
+  "broll": [{"time": 秒数, "idea": "挿入する映像/画像の内容", "reason": "理由"}],
   "removeMore": [{"start": 秒, "end": 秒, "reason": "理由"}]（編集後タイムラインで追加削除すべき区間。確実なもののみ、なければ空配列）,
   "issues": [{"note": "問題点の説明"}]（カットでは直せない問題。なければ空配列）,
   "reshoot": ["撮り直しを推奨する箇所の説明"]（該当なければ空配列）,
@@ -64,6 +69,9 @@ ${cueList || "（字幕なし）"}
 
     return NextResponse.json({
       score: typeof parsed.score === "number" ? Math.max(0, Math.min(100, Math.round(parsed.score))) : null,
+      broll: Array.isArray(parsed.broll)
+        ? parsed.broll.filter((b: { time: unknown; idea: unknown }) => typeof b.time === "number" && typeof b.idea === "string")
+        : [],
       removeMore: Array.isArray(parsed.removeMore)
         ? parsed.removeMore.filter((r: { start: unknown; end: unknown }) =>
             typeof r.start === "number" && typeof r.end === "number" && r.end > r.start)

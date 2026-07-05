@@ -170,6 +170,27 @@ export async function POST(request: NextRequest) {
       systemPrompt += `\n\n【条件】${JSON.stringify(options)}`;
     }
 
+    // 📦 リサーチ銀行：直近2週間の実測リサーチをネタ系生成に自動注入
+    if (feature === "idea_gen" || feature === "viral_convert" || feature === "weekly_plan") {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+          const { data } = await supabase
+            .from("research_bank")
+            .select("content, source, created_at")
+            .eq("genre", genre === "coaching" ? "coaching" : "realestate")
+            .gte("created_at", since)
+            .order("created_at", { ascending: false })
+            .limit(6);
+          if (data && data.length > 0) {
+            const lines = data.map(r => `・${r.content}${r.source ? `（出典: ${r.source}）` : ""}`).join("\n");
+            systemPrompt += `\n\n【リサーチ銀行（実際に確認済みのバズ投稿データ・最優先の参考元）】\n${lines}\n※このデータは実測値なので、検索結果より優先して参考にすること`;
+          }
+        } catch { /* リサーチ銀行が未設定でも生成は続行 */ }
+      }
+    }
+
     // ネタ案・週間プラン生成時は、実際のInstagramインサイト（保存数上位）を学習材料に加える
     if (feature === "idea_gen" || feature === "weekly_plan") {
       const supabase = getSupabase();

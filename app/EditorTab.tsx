@@ -6,7 +6,7 @@ import {
   detectSpeechSegments, allocateCues, generateSRT, generateCutSheet,
   subtractRanges, encodeWav16k, cuesFromTimings,
   extractEditedAudio, proEditorPass, speechTimeToOriginal, originalToSpeechTime,
-  Phrase, detectRetakes, mergeRange, findPhraseRanges,
+  Phrase, detectRetakes, mergeRange, findPhraseRanges, validateTimings,
 } from "@/lib/video";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
@@ -97,6 +97,9 @@ export default function EditorTab() {
   const [instruction, setInstruction] = useState("");
   const [instructing, setInstructing] = useState(false);
   const [instructLog, setInstructLog] = useState<string[]>([]);
+  const [broll, setBroll] = useState<{ time: number; idea: string; reason?: string }[]>([]);
+  const [genImages, setGenImages] = useState<Record<string, string>>({});
+  const [genLoading, setGenLoading] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [audioClean, setAudioClean] = useState(true);
@@ -112,7 +115,7 @@ export default function EditorTab() {
   const analyze = async (f: File) => {
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
     setQaReport(null); setQaLog([]); setLineTimings(null); setShift(0);
-    setSpeed(1); setAutoSpeed(null); setCapOffset(0); setTranscript([]); setRetakeCuts([]); setInstructLog([]);
+    setSpeed(1); setAutoSpeed(null); setCapOffset(0); setTranscript([]); setRetakeCuts([]); setInstructLog([]); setBroll([]); setGenImages({});
     setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
     pipelineDoneRef.current = "";
     try {
@@ -231,8 +234,11 @@ export default function EditorTab() {
         for (const l of d.lines) if (l.index < caps.length) t[l.index] = { start: l.start, end: l.end };
         const coverage = t.filter(Boolean).length / caps.length;
         if (coverage >= 0.7) {
-          timings = t;
+          // 🔬 相互検証：AIのタイミングを波形実測（発話区間）でチェックして無音上の字幕を補正
+          const validated = validateTimings(t, segs);
+          timings = validated.timings;
           log(`🎯 字幕タイミングを実測値に補正（${Math.round(coverage * 100)}%カバー）`);
+          if (validated.corrected > 0) log(`🔬 波形実測との相互検証：${validated.corrected}行のズレを自動補正`);
         } else {
           log("🎯 実測タイミングが不完全のため推定方式で統一（ズレ防止）");
         }
@@ -267,6 +273,7 @@ export default function EditorTab() {
         if (q.error) { log(`⚠ 採点スキップ（${q.error}）`); break; }
 
         score = q.score;
+        if (Array.isArray(q.broll) && q.broll.length > 0) setBroll(q.broll);
         issues = (q.issues ?? []).map((x: { note: string }) => x.note);
         reshoot = q.reshoot ?? [];
         advice = q.advice || advice;
@@ -312,6 +319,24 @@ export default function EditorTab() {
       setSegments(s => cut.applied ? mergeRange(s, cut) : subtractRanges(s, [cut]));
       return prev.map((c, i) => i === idx ? { ...c, applied: !c.applied } : c);
     });
+  };
+
+  // 🖼 Gemini画像生成（サムネイル／Bロール挿入画像）
+  const genImage = async (key: string, prompt: string) => {
+    setGenLoading(key);
+    try {
+      const res = await fetch("/api/gen-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setGenImages(prev => ({ ...prev, [key]: data.image }));
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "画像生成に失敗しました");
+    }
+    setGenLoading(null);
   };
 
   // 💬 編集後の修正指示：AIが編集パラメータに変換して即適用
@@ -587,6 +612,51 @@ export default function EditorTab() {
               </div>
             )}
             {qaReport.advice && <p className="text-xs text-[#5a6080]">💬 総評：{qaReport.advice}</p>}
+
+            {/* 🎞 Bロール計画（挿入映像の指示書＋画像はその場で生成可能） */}
+            {broll.length > 0 && (
+              <div className="pt-2 border-t border-blue-200 space-y-2">
+                <p className="text-xs font-bold text-blue-600">🎞 Bロール計画（視聴維持率UP用の挿入指示）</p>
+                {broll.map((b, i) => (
+                  <div key={i} className="text-xs text-[#2a3052] space-y-1">
+                    <div className="flex items-start gap-2">
+                      <span className="flex-1"><span className="font-bold text-blue-600">{b.time.toFixed(0)}秒</span>：{b.idea}{b.reason && <span className="text-[#9ba0b8]">（{b.reason}）</span>}</span>
+                      <button onClick={() => genImage(`broll${i}`, `Instagramリール用のシネマティックな縦型挿入画像。内容：${b.idea}。日本の不動産・ライフスタイルの文脈。写実的で高品質、テキストなし、縦9:16構図`)}
+                        disabled={genLoading !== null}
+                        className="btn-pop shrink-0 px-2 py-0.5 border border-blue-300 text-blue-600 rounded-lg text-xs disabled:opacity-40">
+                        {genLoading === `broll${i}` ? "生成中…" : genImages[`broll${i}`] ? "再生成" : "🖼 画像生成"}
+                      </button>
+                    </div>
+                    {genImages[`broll${i}`] && (
+                      <div className="flex items-center gap-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={genImages[`broll${i}`]} alt="" className="w-20 rounded-lg border border-blue-200" />
+                        <a href={genImages[`broll${i}`]} download={`broll_${i + 1}.png`} className="text-blue-600 underline">⬇ ダウンロード</a>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 🖼 サムネイル生成 */}
+            <div className="pt-2 border-t border-blue-200 space-y-2">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold text-blue-600 flex-1">🖼 カバー画像（サムネイル）</p>
+                <button onClick={() => genImage("thumb", `Instagramリールのカバー画像（縦9:16）。テーマ：「${captions[0] ?? narration.slice(0, 40)}」。シネマティックで目を引く構図、高コントラスト、日本のリアルな${"\u4e0d\u52d5\u7523"}・住宅の文脈、文字は入れない`)}
+                  disabled={genLoading !== null}
+                  className="btn-pop px-3 py-1 bg-[#1c2340] hover:bg-[#2a3358] text-white rounded-lg text-xs disabled:opacity-40">
+                  {genLoading === "thumb" ? "生成中…" : genImages["thumb"] ? "再生成" : "生成する"}
+                </button>
+              </div>
+              {genImages["thumb"] && (
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={genImages["thumb"]} alt="" className="w-24 rounded-lg border border-blue-200" />
+                  <a href={genImages["thumb"]} download="cover.png" className="text-xs text-blue-600 underline">⬇ ダウンロード</a>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

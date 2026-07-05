@@ -1111,6 +1111,63 @@ function ThreadsQueueSection() {
   );
 }
 
+interface ResearchItem { id: number; genre: string; content: string; source: string | null; created_at: string }
+
+function ResearchBankSection() {
+  const [items, setItems] = useState<ResearchItem[]>([]);
+  const [enabled, setEnabled] = useState(true);
+  const [input, setInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const reload = () => {
+    fetch(`/api/research?genre=${currentGenre()}`).then(r => r.json())
+      .then(d => { setItems(d.items ?? []); setEnabled(d.enabled ?? false); })
+      .catch(() => setEnabled(false));
+  };
+  useEffect(() => { reload(); }, []);
+
+  const save = async () => {
+    if (!input.trim()) return;
+    setSaving(true);
+    await fetch("/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ genre: currentGenre(), content: input.trim() }),
+    }).catch(() => {});
+    setInput(""); setSaving(false); reload();
+  };
+
+  if (!enabled) return null;
+
+  return (
+    <section>
+      <h2 className="text-sm font-bold text-[#1e2440] mb-1">📦 リサーチ銀行</h2>
+      <p className="text-xs text-[#9ba0b8] mb-3">ここに貯めたバズ投稿の実測データは、ネタ案・バズ逆算・週間プランの生成時に毎回自動で参照されます（直近2週間分）</p>
+      <div className="flex gap-2 mb-3">
+        <textarea value={input} onChange={e => setInput(e.target.value)} rows={2}
+          placeholder="例：@tamu_hudousan「不動産取得税の罠」55.9万再生。フックは「家を買ったあとに届くその通知〜」。白い紙を持って歩き語り"
+          className="flex-1 bg-white border border-[#d6d9e6] text-[#1e2440] text-xs rounded-xl p-3 resize-none focus:outline-none focus:border-[#5b6cff] placeholder:text-[#a6abc2]" />
+        <button onClick={save} disabled={saving || !input.trim()}
+          className="btn-pop px-4 bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-40 text-white text-xs font-bold rounded-xl shrink-0">
+          {saving ? "…" : "📥 登録"}
+        </button>
+      </div>
+      {items.length > 0 && (
+        <div className="space-y-2">
+          {items.map(r => (
+            <div key={r.id} className="flex items-start gap-3 border border-[#e3e5ef] bg-white rounded-xl px-4 py-3">
+              <p className="flex-1 text-xs text-[#2a3052] leading-relaxed">{r.content}</p>
+              <span className="text-xs text-[#9ba0b8] shrink-0">{new Date(r.created_at).toLocaleDateString("ja-JP")}</span>
+              <button onClick={async () => { await fetch(`/api/research?id=${r.id}`, { method: "DELETE" }); reload(); }}
+                className="text-[#c3c7d8] hover:text-red-500 text-xs shrink-0 transition-colors">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function LibraryTab() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [bookmarks, setBookmarks] = useState<BookmarkedIdea[]>([]);
@@ -1120,6 +1177,7 @@ function LibraryTab() {
 
   return (
     <div className="overflow-y-auto output-scroll h-[calc(100vh-185px)] px-3 md:px-6 py-5 space-y-8">
+      <ResearchBankSection />
       <ThreadsQueueSection />
       {/* 保留ネタ案 */}
       {bookmarks.length > 0 && (

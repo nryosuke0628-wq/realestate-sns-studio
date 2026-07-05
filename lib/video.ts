@@ -356,3 +356,32 @@ export function findPhraseRanges(transcript: Phrase[], phrase: string): Phrase[]
     return t.includes(target) || target.includes(t) || similarity(t, target) >= 0.7;
   });
 }
+
+// 🔬 相互検証：Geminiの字幕タイミングをRMS波形の実測（発話区間）で検証・補正
+// 「あるAIの出力を別の実測値で検証してから使う」原則の実装
+export function validateTimings(
+  timings: ({ start: number; end: number } | undefined)[],
+  segments: Segment[],
+): { timings: ({ start: number; end: number } | undefined)[]; corrected: number } {
+  let corrected = 0;
+  const inSpeech = (t: number) => segments.some(s => t >= s.start - 0.1 && t <= s.end + 0.1);
+  const snapToSpeech = (t: number) => {
+    if (inSpeech(t)) return t;
+    let best = t, dist = Infinity;
+    for (const s of segments) {
+      for (const edge of [s.start, s.end]) {
+        const d = Math.abs(edge - t);
+        if (d < dist) { dist = d; best = edge; }
+      }
+    }
+    return best;
+  };
+  const out = timings.map(t => {
+    if (!t) return t;
+    const s = snapToSpeech(t.start);
+    const e = snapToSpeech(t.end);
+    if (Math.abs(s - t.start) > 0.15 || Math.abs(e - t.end) > 0.15) corrected++;
+    return e > s ? { start: s, end: e } : t;
+  });
+  return { timings: out, corrected };
+}
