@@ -1458,7 +1458,8 @@ function parsePicks(text: string): DailyPick[] {
   if (!block) return [];
   return block.split("PICK_SPLIT").map(t => t.trim()).filter(Boolean).map(t => {
     const field = (label: string) =>
-      t.match(new RegExp(`${label}[：:]\\s*([\\s\\S]*?)(?=\\n\\s*(?:タイプ|タイトル|フック|理由|スコア)[：:]|$)`))?.[1].trim() ?? "";
+      (t.match(new RegExp(`${label}[：:]\\s*([\\s\\S]*?)(?=\\n\\s*(?:タイプ|タイトル|フック|理由|スコア)[：:]|$)`))?.[1] ?? "")
+        .replace(/\*\*/g, "").replace(/^「|」$/g, "").trim();
     const score = parseInt(t.match(/スコア[：:]\s*(\d+)/)?.[1] ?? "0", 10);
     return { type: field("タイプ"), title: field("タイトル"), hook: field("フック"), reason: field("理由"), score };
   }).filter(p => p.title).sort((a, b) => b.score - a.score);
