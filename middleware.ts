@@ -4,7 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 export function middleware(request: NextRequest) {
   const pass = process.env.APP_PASSWORD ?? "2424";
   const auth = request.cookies.get("studio_auth")?.value;
-  if (auth === pass) return NextResponse.next();
+  if (auth === pass) {
+    // 操作があるたびに10分延長（10分間無操作なら再ログイン要求）
+    const res = NextResponse.next();
+    res.cookies.set("studio_auth", pass, { maxAge: 600, httpOnly: true, sameSite: "lax", path: "/" });
+    return res;
+  }
 
   // APIはリダイレクトせず401（Claude API等の勝手な利用を防ぐ）
   if (request.nextUrl.pathname.startsWith("/api/")) {

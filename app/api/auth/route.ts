@@ -7,9 +7,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "パスワードが違います" }, { status: 401 });
   }
   const res = NextResponse.json({ success: true });
-  // 30日間有効
+  // 10分間有効・操作のたびにミドルウェアが延長
   res.cookies.set("studio_auth", pass, {
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 600, // 10分（操作のたびに自動延長）
     httpOnly: true,
     sameSite: "lax",
     path: "/",

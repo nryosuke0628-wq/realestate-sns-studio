@@ -72,6 +72,11 @@ function currentGenre(): string {
   return localStorage.getItem("studio_genre") ?? "realestate";
 }
 
+// ジャンルごとにデータを完全分離（不動産とコーチングは別アカウント運用のため）
+function gKey(base: string): string {
+  return currentGenre() === "coaching" ? `${base}_coaching` : base;
+}
+
 async function callAPI(feature: string, input = "", options = {}): Promise<string> {
   const res = await fetch("/api/generate", {
     method: "POST",
@@ -141,33 +146,33 @@ function buildPerfContext(): string {
 // ── Storage ───────────────────────────────────────────────────────────
 function loadSessions(): ChatSession[] {
   if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem("debate_sessions") ?? "[]"); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(gKey("debate_sessions")) ?? "[]"); } catch { return []; }
 }
-function saveSessions(s: ChatSession[]) { localStorage.setItem("debate_sessions", JSON.stringify(s)); }
+function saveSessions(s: ChatSession[]) { localStorage.setItem(gKey("debate_sessions"), JSON.stringify(s)); }
 
 function loadLibrary(): LibraryItem[] {
   if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem("script_library") ?? "[]"); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(gKey("script_library")) ?? "[]"); } catch { return []; }
 }
 function saveLibraryItem(item: LibraryItem) {
   const next = [item, ...loadLibrary().filter(i => i.id !== item.id)];
-  localStorage.setItem("script_library", JSON.stringify(next));
+  localStorage.setItem(gKey("script_library"), JSON.stringify(next));
 }
 function updateLibraryStatus(id: string, status: ProductionStatus) {
-  localStorage.setItem("script_library", JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, status } : i)));
+  localStorage.setItem(gKey("script_library"), JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, status } : i)));
 }
 function deleteLibraryItem(id: string) {
-  localStorage.setItem("script_library", JSON.stringify(loadLibrary().filter(i => i.id !== id)));
+  localStorage.setItem(gKey("script_library"), JSON.stringify(loadLibrary().filter(i => i.id !== id)));
 }
 function updateLibraryPerformance(id: string, performance: string) {
-  localStorage.setItem("script_library", JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, performance } : i)));
+  localStorage.setItem(gKey("script_library"), JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, performance } : i)));
 }
 
 function loadWeeklyPlan(): WeeklyPlan | null {
   if (typeof window === "undefined") return null;
-  try { return JSON.parse(localStorage.getItem("weekly_plan") ?? "null"); } catch { return null; }
+  try { return JSON.parse(localStorage.getItem(gKey("weekly_plan")) ?? "null"); } catch { return null; }
 }
-function saveWeeklyPlan(plan: WeeklyPlan) { localStorage.setItem("weekly_plan", JSON.stringify(plan)); }
+function saveWeeklyPlan(plan: WeeklyPlan) { localStorage.setItem(gKey("weekly_plan"), JSON.stringify(plan)); }
 
 // 週間プランのネタから台本生成セッションを作成（台本生成タブに引き継ぐ）
 function createSessionFromIdea(idea: string): void {
@@ -184,14 +189,14 @@ function createSessionFromIdea(idea: string): void {
 
 function loadBookmarks(): BookmarkedIdea[] {
   if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem("bookmarked_ideas") ?? "[]"); } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(gKey("bookmarked_ideas")) ?? "[]"); } catch { return []; }
 }
 function addBookmark(idea: string) {
   const item: BookmarkedIdea = { id: Date.now().toString(), idea, createdAt: Date.now() };
-  localStorage.setItem("bookmarked_ideas", JSON.stringify([item, ...loadBookmarks()]));
+  localStorage.setItem(gKey("bookmarked_ideas"), JSON.stringify([item, ...loadBookmarks()]));
 }
 function deleteBookmark(id: string) {
-  localStorage.setItem("bookmarked_ideas", JSON.stringify(loadBookmarks().filter(i => i.id !== id)));
+  localStorage.setItem(gKey("bookmarked_ideas"), JSON.stringify(loadBookmarks().filter(i => i.id !== id)));
 }
 
 // ── Small Components ──────────────────────────────────────────────────
@@ -555,7 +560,7 @@ function DebateSession({ session, onUpdate }: { session: ChatSession; onUpdate: 
       fetch("/api/threads-queue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: session.title, posts: session.finalThreads }),
+        body: JSON.stringify({ title: session.title, posts: session.finalThreads, genre: currentGenre() }),
       }).catch(() => {});
     }
     onUpdate({ ...session, approved: true });
@@ -1075,7 +1080,7 @@ function ThreadsQueueSection() {
   const [enabled, setEnabled] = useState(true);
 
   const reload = () => {
-    fetch("/api/threads-queue").then(r => r.json())
+    fetch(`/api/threads-queue?genre=${currentGenre()}`).then(r => r.json())
       .then(d => { setItems(d.items ?? []); setEnabled(d.enabled ?? false); })
       .catch(() => setEnabled(false));
   };
@@ -1091,7 +1096,7 @@ function ThreadsQueueSection() {
   return (
     <section>
       <h2 className="text-sm font-bold text-[#1e2440] mb-1">🧵 Threads自動投稿キュー</h2>
-      <p className="text-xs text-[#9ba0b8] mb-3">毎日19:00に上から1件ずつ自動投稿されます</p>
+      <p className="text-xs text-[#9ba0b8] mb-3">{currentGenre() === "coaching" ? "⚠ コーチング用Threadsアカウントの連携までは投稿されず、キューに貯まります" : "毎日19:00に上から1件ずつ自動投稿されます"}</p>
       <div className="space-y-2">
         {items.map(q => (
           <div key={q.id} className="flex items-center gap-3 border border-[#e3e5ef] bg-white rounded-xl px-4 py-3">
@@ -1527,7 +1532,7 @@ export default function Home() {
           ))}
         </div>
       </nav>
-      <main key={tab} className="anim-in mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
+      <main key={`${tab}-${genre}`} className="anim-in mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
         {tab === "weekly"  && <WeeklyTab goScript={() => setTab("script")} />}
         {tab === "script"  && <ScriptTab />}
         {tab === "library" && <LibraryTab />}

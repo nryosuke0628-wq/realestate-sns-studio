@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     .from("threads_queue")
     .select("id, posts")
     .eq("status", "pending")
+    .eq("genre", "realestate") // コーチング用Threadsは専用アカウント連携後に対応
     .order("created_at", { ascending: true })
     .limit(1);
 

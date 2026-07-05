@@ -3,13 +3,16 @@ import { getSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-// 投稿キューの一覧
-export async function GET() {
+// 投稿キューの一覧（ジャンル別）
+export async function GET(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ items: [], enabled: false });
+  const _reqUrl = request.url;
+  const genre = new URL(_reqUrl ?? "http://x").searchParams.get("genre") ?? "realestate";
   const { data } = await supabase
     .from("threads_queue")
     .select("id, title, posts, status, error, created_at, posted_at")
+    .eq("genre", genre)
     .order("created_at", { ascending: true })
     .limit(30);
   return NextResponse.json({ items: data ?? [], enabled: true });
@@ -20,11 +23,11 @@ export async function POST(request: NextRequest) {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase未設定" }, { status: 500 });
   try {
-    const { title, posts } = await request.json();
+    const { title, posts, genre } = await request.json();
     if (!Array.isArray(posts) || posts.length === 0) {
       return NextResponse.json({ error: "posts required" }, { status: 400 });
     }
-    const { error } = await supabase.from("threads_queue").insert({ title: title ?? "無題", posts, status: "pending" });
+    const { error } = await supabase.from("threads_queue").insert({ title: title ?? "無題", posts, status: "pending", genre: genre ?? "realestate" });
     if (error) throw new Error(error.message);
     return NextResponse.json({ success: true });
   } catch (error) {

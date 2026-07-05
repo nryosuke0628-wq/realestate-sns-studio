@@ -13,7 +13,9 @@ import {
 interface StoredScript { id: string; title: string; script: string }
 function loadScripts(): StoredScript[] {
   try {
-    const items = JSON.parse(localStorage.getItem("script_library") ?? "[]") as { id: string; title: string; script: string }[];
+    const genre = localStorage.getItem("studio_genre") ?? "realestate";
+    const key = genre === "coaching" ? "script_library_coaching" : "script_library";
+    const items = JSON.parse(localStorage.getItem(key) ?? "[]") as { id: string; title: string; script: string }[];
     return items.map(i => ({ id: i.id, title: i.title, script: i.script }));
   } catch { return []; }
 }
