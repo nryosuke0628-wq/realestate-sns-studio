@@ -51,9 +51,9 @@ const STYLES: Record<StyleKey, {
   y: string; fontsize: number; hookSize: number;
   color: string; hookColor: string; box?: string;
 }> = {
-  classic: { label: "定番",       desc: "下テロップ・白＋フック黄",     y: "h-th-170",   fontsize: 46, hookSize: 58, color: "white",    hookColor: "yellow" },
-  white:   { label: "白オンリー", desc: "色なしシンプル・フックは大",   y: "h-th-170",   fontsize: 46, hookSize: 60, color: "white",    hookColor: "white" },
-  center:  { label: "センター",   desc: "画面中央に特大文字",           y: "(h-th)/2",   fontsize: 50, hookSize: 64, color: "white",    hookColor: "yellow" },
+  center:  { label: "センター",   desc: "画面中央に特大文字（基本形）", y: "(h-th)/2",   fontsize: 50, hookSize: 64, color: "white",    hookColor: "yellow" },
+  classic: { label: "定番下",     desc: "下テロップ・白＋フック黄",     y: "h-th-170",   fontsize: 46, hookSize: 58, color: "white",    hookColor: "yellow" },
+  white:   { label: "白オンリー", desc: "色なしシンプル（中央）",       y: "(h-th)/2",   fontsize: 46, hookSize: 60, color: "white",    hookColor: "white" },
   pop:     { label: "ビビッド",   desc: "ピンク＋黒カード背景",         y: "h-th-190",   fontsize: 46, hookSize: 58, color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=16" },
   karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",     y: "h-th-120",   fontsize: 44, hookSize: 56, color: "0x7DE8FF", hookColor: "0x7DE8FF" },
 };
@@ -87,7 +87,7 @@ export default function EditorTab() {
   const [lineTimings, setLineTimings] = useState<({ start: number; end: number } | undefined)[] | null>(null);
   const pipelineDoneRef = useRef<string>("");
   // スタイル・仕上げ
-  const [style, setStyle] = useState<StyleKey>("classic");
+  const [style, setStyle] = useState<StyleKey>("center"); // 基本はテロップ中央
   const [shift, setShift] = useState(0); // テロップ全体の時間シフト（秒）
   const [speed, setSpeed] = useState(1);       // 倍速（自動設定・手動上書き可）
   const [autoSpeed, setAutoSpeed] = useState<number | null>(null);
@@ -100,6 +100,9 @@ export default function EditorTab() {
   const [broll, setBroll] = useState<{ time: number; idea: string; reason?: string }[]>([]);
   const [genImages, setGenImages] = useState<Record<string, string>>({});
   const [genLoading, setGenLoading] = useState<string | null>(null);
+  const [checkFrames, setCheckFrames] = useState<string[]>([]);
+  const [finalCheck, setFinalCheck] = useState<{ pass: boolean; score: number | null; issues: string[]; advice: string } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [audioClean, setAudioClean] = useState(true);
@@ -115,7 +118,7 @@ export default function EditorTab() {
   const analyze = async (f: File) => {
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
     setQaReport(null); setQaLog([]); setLineTimings(null); setShift(0);
-    setSpeed(1); setAutoSpeed(null); setCapOffset(0); setTranscript([]); setRetakeCuts([]); setInstructLog([]); setBroll([]); setGenImages({});
+    setSpeed(1); setAutoSpeed(null); setCapOffset(0); setTranscript([]); setRetakeCuts([]); setInstructLog([]); setBroll([]); setGenImages({}); setCheckFrames([]); setFinalCheck(null);
     setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
     pipelineDoneRef.current = "";
     try {
@@ -495,6 +498,35 @@ export default function EditorTab() {
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
       setOutputUrl(URL.createObjectURL(blob));
       setPhase("done");
+
+      // 🕵️ 仕上げ検品：完成動画から冒頭・中盤・終盤のフレームを抽出しGeminiが実際の絵を検品
+      try {
+        setChecking(true);
+        setStatusMsg("🕵️ 仕上げ検品官が完成動画をチェック中…");
+        const outDur = keptDuration / speed;
+        const times = [Math.min(0.5, outDur * 0.1), outDur * 0.5, Math.max(0, outDur - 1)];
+        const frameB64: string[] = [];
+        for (let i = 0; i < times.length; i++) {
+          const rc = await ffmpeg.exec(["-ss", times[i].toFixed(2), "-i", "output.mp4", "-frames:v", "1", "-q:v", "6", `check${i}.jpg`]);
+          if (rc !== 0) continue;
+          const fd = await ffmpeg.readFile(`check${i}.jpg`);
+          const fb = new Uint8Array(fd as Uint8Array);
+          let bin = "";
+          for (let j = 0; j < fb.length; j++) bin += String.fromCharCode(fb[j]);
+          frameB64.push(`data:image/jpeg;base64,${btoa(bin)}`);
+        }
+        setCheckFrames(frameB64);
+        if (frameB64.length > 0) {
+          const cRes = await fetch("/api/final-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ frames: frameB64, expectedPosition: STYLES[style].y === "(h-th)/2" ? "center" : "bottom" }),
+          });
+          const cData = await cRes.json();
+          if (!cData.error) setFinalCheck(cData);
+        }
+      } catch { /* 検品失敗でも完成動画は有効 */ }
+      setChecking(false);
       setStatusMsg("");
     } catch (e) {
       setErrorMsg(
@@ -675,7 +707,7 @@ export default function EditorTab() {
                   onTimeUpdate={e => setPreviewTime((e.target as HTMLVideoElement).currentTime)}
                   className="w-full aspect-[9/16] object-cover" />
                 {activeCueIdx >= 0 && (
-                  <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 text-center pointer-events-none">
+                  <div className={`absolute inset-x-2 text-center pointer-events-none ${STYLES[style].y === "(h-th)/2" ? "top-1/2 -translate-y-1/2" : "bottom-[13%]"}`}>
                     <span className="inline-block text-white font-black text-sm leading-snug px-1"
                       style={{ textShadow: "0 0 4px #000, 0 0 8px #000, 2px 2px 2px #000" }}>
                       {shiftedCues[activeCueIdx].text}
@@ -749,6 +781,31 @@ export default function EditorTab() {
           {outputUrl && (
             <div className="space-y-2">
               <video src={outputUrl} controls className="w-full max-h-80 rounded-xl bg-black" />
+
+              {/* 🕵️ 仕上げ検品官の結果 */}
+              {checking && <Spinner label="🕵️ 仕上げ検品官が完成動画をチェック中…" />}
+              {finalCheck && (
+                <div className={`rounded-xl p-3 border ${finalCheck.pass ? "border-green-300 bg-green-50" : "border-orange-300 bg-orange-50"}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-bold text-[#2a3052]">🕵️ 仕上げ検品官</p>
+                    <span className={`text-sm font-black ${finalCheck.pass ? "text-green-600" : "text-orange-500"}`}>
+                      {finalCheck.pass ? "✅ 合格" : "⚠ 要確認"}{finalCheck.score !== null ? ` ${finalCheck.score}点` : ""}
+                    </span>
+                  </div>
+                  {checkFrames.length > 0 && (
+                    <div className="flex gap-1.5 mb-2">
+                      {checkFrames.map((f, i) => (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img key={i} src={f} alt="" className="w-14 rounded-md border border-[#e3e5ef]" />
+                      ))}
+                    </div>
+                  )}
+                  {finalCheck.issues.map((s, i) => <p key={i} className="text-xs text-orange-600">・{s}</p>)}
+                  {finalCheck.advice && <p className="text-xs text-[#5a6080] mt-1">💬 {finalCheck.advice}</p>}
+                  {!finalCheck.pass && <p className="text-xs text-[#5a6080] mt-1">→ 上のスタイル・シフト・💬修正指示で調整して再書き出しできます</p>}
+                </div>
+              )}
+
               <a href={outputUrl} download="edited.mp4"
                 className="block text-center py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl text-sm transition-colors">
                 ⬇ 完成動画をダウンロード（そのままインスタ投稿OK）
