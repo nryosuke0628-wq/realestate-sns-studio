@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
 import { DEBATE_PROMPTS } from "@/lib/agents-debate";
 import { COACHING_PROMPTS } from "@/lib/agents-coaching";
+import { AI_PROMPTS } from "@/lib/agents-ai";
 import { getSupabase } from "@/lib/supabase";
 
 export const maxDuration = 60; // Vercel Pro: 60s, Hobby: 10s
@@ -120,6 +121,25 @@ const SEARCH_MAP: Record<string, { q: string; domains?: string[] }[]> = {
     { q: `コーチング 習慣化 TikTok ショート動画 バズった 再生回数 ${currentYear}年` },
     { q: `${currentYear}年 自己啓発 トレンド テーマ 人気` },
   ],
+  // AI活用ジャンル用トレンド検索
+  trend_collect_ai: [
+    { q: `ChatGPT AI活用 リール バズ 再生数 万`, domains: ["instagram.com"] },
+    { q: `生成AI 活用術 TikTok ショート動画 バズった 再生回数 ${currentYear}年` },
+    { q: `${currentYear}年${currentMonth}月 生成AI ニュース 新機能 話題` },
+  ],
+  // 今日の3案（ジャンル別に鮮度の高い検索を注入）
+  daily_picks: [
+    { q: `不動産 リール バズった 再生数 万回`, domains: ["instagram.com"] },
+    { q: `${currentYear}年${currentMonth}月 不動産 ニュース 住宅ローン 金利` },
+  ],
+  daily_picks_coaching: [
+    { q: `自己啓発 マインドセット リール バズ 再生数 万`, domains: ["instagram.com"] },
+    { q: `${currentYear}年 自己啓発 習慣化 トレンド テーマ` },
+  ],
+  daily_picks_ai: [
+    { q: `ChatGPT AI活用 リール バズ 再生数 万`, domains: ["instagram.com"] },
+    { q: `${currentYear}年${currentMonth}月 生成AI ニュース 新機能 話題` },
+  ],
   // ジャンル不問のバズ収集（バズ逆算モード用）
   viral_collect: [
     { q: `TikTok リール バズった動画 再生数 万回 トーク 分析 ${currentYear}年` },
@@ -137,10 +157,10 @@ export async function POST(request: NextRequest) {
     const { feature, input, options, genre } = await request.json();
     if (!feature) return NextResponse.json({ error: "feature required" }, { status: 400 });
 
-    // ジャンル切替：コーチングは専用人格で上書き（無いキーは共通にフォールバック）
+    // ジャンル切替：コーチング/AIは専用人格で上書き（無いキーは共通にフォールバック）
     const promptMap: Record<string, string> = {
       ...DEBATE_PROMPTS,
-      ...(genre === "coaching" ? COACHING_PROMPTS : {}),
+      ...(genre === "coaching" ? COACHING_PROMPTS : genre === "ai" ? AI_PROMPTS : {}),
       news_realestate: NEWS_PROMPT,
       buzz_analyze: BUZZ_ANALYZE_PROMPT,
       data_analyze: DATA_ANALYZE_PROMPT,
@@ -159,7 +179,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const searchKey = feature === "trend_collect" && genre === "coaching" ? "trend_collect_coaching" : feature;
+    // ジャンル専用の検索クエリがあればそちらを使う（例: trend_collect_coaching / daily_picks_ai）
+    const searchKey = SEARCH_MAP[`${feature}_${genre}`] ? `${feature}_${genre}` : feature;
     if (SEARCH_MAP[searchKey]) {
       const allResults = await Promise.all(SEARCH_MAP[searchKey].map(({ q, domains }) => searchWeb(q, domains)));
       const results = allResults.filter(Boolean).join("\n\n");
@@ -171,7 +192,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 📦 リサーチ銀行：直近2週間の実測リサーチをネタ系生成に自動注入
-    if (feature === "idea_gen" || feature === "viral_convert" || feature === "weekly_plan") {
+    if (feature === "idea_gen" || feature === "viral_convert" || feature === "weekly_plan" || feature === "daily_picks") {
       const supabase = getSupabase();
       if (supabase) {
         try {
@@ -179,7 +200,7 @@ export async function POST(request: NextRequest) {
           const { data } = await supabase
             .from("research_bank")
             .select("content, source, created_at")
-            .eq("genre", genre === "coaching" ? "coaching" : "realestate")
+            .eq("genre", genre === "coaching" || genre === "ai" ? genre : "realestate")
             .gte("created_at", since)
             .order("created_at", { ascending: false })
             .limit(6);
@@ -191,8 +212,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ネタ案・週間プラン生成時は、実際のInstagramインサイト（保存数上位）を学習材料に加える
-    if (feature === "idea_gen" || feature === "weekly_plan") {
+    // ネタ案・週間プラン・今日の3案生成時は、実際のInstagramインサイト（保存数上位）を学習材料に加える
+    if (feature === "idea_gen" || feature === "weekly_plan" || feature === "daily_picks") {
       const supabase = getSupabase();
       if (supabase) {
         try {
@@ -226,6 +247,7 @@ export async function POST(request: NextRequest) {
       user_revision: 2000,
       viral_collect: 1200,
       viral_convert: 2000,
+      daily_picks: 1800,
     };
 
     const response = await anthropic.messages.create({

@@ -1,16 +1,29 @@
-// Threads API（Meta）投稿の共通ロジック
+// Threads API（Meta）投稿の共通ロジック。ジャンルごとに別アカウント（別トークン）で投稿する
 
-export function threadsConfigured(): boolean {
-  return !!(process.env.THREADS_USER_ID && process.env.THREADS_ACCESS_TOKEN);
+interface ThreadsCreds { userId: string; token: string }
+
+// 環境変数の対応：
+//   realestate: THREADS_USER_ID / THREADS_ACCESS_TOKEN
+//   coaching:   THREADS_USER_ID_COACHING / THREADS_ACCESS_TOKEN_COACHING
+//   ai:         THREADS_USER_ID_AI / THREADS_ACCESS_TOKEN_AI
+function credsFor(genre: string): ThreadsCreds | null {
+  const suffix = genre === "coaching" ? "_COACHING" : genre === "ai" ? "_AI" : "";
+  const userId = process.env[`THREADS_USER_ID${suffix}`];
+  const token = process.env[`THREADS_ACCESS_TOKEN${suffix}`];
+  return userId && token ? { userId, token } : null;
 }
 
-async function createContainer(text: string): Promise<string> {
+export function threadsConfigured(genre = "realestate"): boolean {
+  return credsFor(genre) !== null;
+}
+
+async function createContainer(text: string, creds: ThreadsCreds): Promise<string> {
   const res = await fetch(
-    `https://graph.threads.net/v1.0/${process.env.THREADS_USER_ID}/threads`,
+    `https://graph.threads.net/v1.0/${creds.userId}/threads`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ media_type: "TEXT", text, access_token: process.env.THREADS_ACCESS_TOKEN }),
+      body: JSON.stringify({ media_type: "TEXT", text, access_token: creds.token }),
     }
   );
   const data = await res.json();
@@ -18,14 +31,14 @@ async function createContainer(text: string): Promise<string> {
   return data.id;
 }
 
-async function publishContainer(containerId: string): Promise<string> {
+async function publishContainer(containerId: string, creds: ThreadsCreds): Promise<string> {
   await new Promise((r) => setTimeout(r, 1000));
   const res = await fetch(
-    `https://graph.threads.net/v1.0/${process.env.THREADS_USER_ID}/threads_publish`,
+    `https://graph.threads.net/v1.0/${creds.userId}/threads_publish`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creation_id: containerId, access_token: process.env.THREADS_ACCESS_TOKEN }),
+      body: JSON.stringify({ creation_id: containerId, access_token: creds.token }),
     }
   );
   const data = await res.json();
@@ -33,9 +46,11 @@ async function publishContainer(containerId: string): Promise<string> {
   return data.id;
 }
 
-export async function postToThreads(text: string): Promise<string> {
-  const containerId = await createContainer(text);
-  return publishContainer(containerId);
+export async function postToThreads(text: string, genre = "realestate"): Promise<string> {
+  const creds = credsFor(genre);
+  if (!creds) throw new Error("このジャンルのThreadsアカウントが未連携です");
+  const containerId = await createContainer(text, creds);
+  return publishContainer(containerId, creds);
 }
 
 // 投稿本文の整形（生成時のラベル・文字数表記を除去）

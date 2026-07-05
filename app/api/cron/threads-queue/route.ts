@@ -4,7 +4,10 @@ import { postToThreads, threadsConfigured, cleanThreadsPost } from "@/lib/thread
 
 export const maxDuration = 60;
 
-// 毎日19:00 JSTに実行：キューの先頭1件（5連投稿）を自動投稿
+const GENRES = ["realestate", "coaching", "ai"] as const;
+
+// 毎日19:00 JSTに実行：ジャンルごとにキューの先頭1件（5連投稿）を自動投稿。
+// Threads未連携のジャンルはスキップし、キューに滞留させる（連携後に自動で流れ始める）
 export async function GET(request: NextRequest) {
   if (process.env.CRON_SECRET) {
     const auth = request.headers.get("authorization");
@@ -15,32 +18,39 @@ export async function GET(request: NextRequest) {
 
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: "Supabase未設定" }, { status: 500 });
-  if (!threadsConfigured()) return NextResponse.json({ skipped: "Threads未連携" });
 
-  const { data } = await supabase
-    .from("threads_queue")
-    .select("id, posts")
-    .eq("status", "pending")
-    .eq("genre", "realestate") // コーチング用Threadsは専用アカウント連携後に対応
-    .order("created_at", { ascending: true })
-    .limit(1);
+  const results: Record<string, unknown> = {};
 
-  if (!data || data.length === 0) return NextResponse.json({ skipped: "キューが空" });
+  for (const genre of GENRES) {
+    if (!threadsConfigured(genre)) { results[genre] = "Threads未連携"; continue; }
 
-  const item = data[0];
-  try {
-    const posts: string[] = item.posts;
-    for (let i = 0; i < posts.length; i++) {
-      await postToThreads(cleanThreadsPost(posts[i]));
-      if (i < posts.length - 1) await new Promise(r => setTimeout(r, 2500));
+    const { data } = await supabase
+      .from("threads_queue")
+      .select("id, posts")
+      .eq("status", "pending")
+      .eq("genre", genre)
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    if (!data || data.length === 0) { results[genre] = "キューが空"; continue; }
+
+    const item = data[0];
+    try {
+      const posts: string[] = item.posts;
+      for (let i = 0; i < posts.length; i++) {
+        await postToThreads(cleanThreadsPost(posts[i]), genre);
+        if (i < posts.length - 1) await new Promise(r => setTimeout(r, 2500));
+      }
+      await supabase.from("threads_queue")
+        .update({ status: "posted", posted_at: new Date().toISOString() })
+        .eq("id", item.id);
+      results[genre] = { success: true, posted: posts.length };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "投稿失敗";
+      await supabase.from("threads_queue").update({ status: "error", error: msg }).eq("id", item.id);
+      results[genre] = { error: msg };
     }
-    await supabase.from("threads_queue")
-      .update({ status: "posted", posted_at: new Date().toISOString() })
-      .eq("id", item.id);
-    return NextResponse.json({ success: true, posted: posts.length });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "投稿失敗";
-    await supabase.from("threads_queue").update({ status: "error", error: msg }).eq("id", item.id);
-    return NextResponse.json({ error: msg }, { status: 500 });
   }
+
+  return NextResponse.json(results);
 }

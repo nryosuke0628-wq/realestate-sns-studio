@@ -142,3 +142,28 @@ body {
 .coaching .bg-\[\#5b6cff\]\/10 { background-color: rgba(138, 144, 163, 0.12); }
 .coaching .border-\[\#5b6cff\]\/40 { border-color: rgba(138, 144, 163, 0.4); }
 .coaching.dark .bg-\[\#1c2340\] { background-color: #6a6f80; }
+
+/* ── AIジャンル：ダークグリーン基調＋黄緑アクセントへ変身 ── */
+.ai body {
+  background-color: #131b14;
+  background-image:
+    conic-gradient(from 210deg at 50% 50%,
+      #1b2618 0deg 120deg,
+      #16200f 120deg 240deg,
+      #101709 240deg 360deg);
+}
+.ai .text-\[\#5b6cff\] { color: #55a02e; }
+.ai .text-\[\#8b96ff\] { color: #8cc63f; }
+.ai .bg-\[\#8b96ff\] { background-color: #8cc63f; }
+.ai .bg-\[\#eef0ff\] { background-color: #f1f7e8; }
+.ai .border-\[\#5b6cff\] { border-color: #55a02e; }
+.ai .bg-\[\#5b6cff\]\/10 { background-color: rgba(140, 198, 63, 0.12); }
+.ai .bg-\[\#5b6cff\]\/20 { background-color: rgba(140, 198, 63, 0.2); }
+.ai .bg-\[\#5b6cff\]\/30 { background-color: rgba(140, 198, 63, 0.28); }
+.ai .border-\[\#5b6cff\]\/40 { border-color: rgba(85, 160, 46, 0.4); }
+.ai .border-\[\#5b6cff\]\/50 { border-color: rgba(85, 160, 46, 0.5); }
+.ai .border-\[\#5b6cff\]\/30 { border-color: rgba(85, 160, 46, 0.3); }
+.ai .border-\[\#5b6cff\]\/20 { border-color: rgba(85, 160, 46, 0.2); }
+.ai.dark .text-\[\#5b6cff\] { color: #a3d766; }
+.ai.dark .bg-\[\#1c2340\] { background-color: #55a02e; }
+.ai.dark .hover\:bg-\[\#2a3358\]:hover { background-color: #66b53c; }

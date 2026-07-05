@@ -5,7 +5,8 @@ import EditorTab from "./EditorTab";
 import Teleprompter from "./Teleprompter";
 
 // ── Types ─────────────────────────────────────────────────────────────
-type Tab = "weekly" | "script" | "library" | "editor" | "dashboard" | "news" | "analyze";
+type Tab = "picks" | "weekly" | "script" | "library" | "editor" | "dashboard" | "news" | "analyze";
+type Genre = "realestate" | "coaching" | "ai";
 
 interface DashboardData {
   connected: boolean;
@@ -53,6 +54,7 @@ interface LibraryItem {
   createdAt: number;
   performance?: string; // 投稿後の実績メモ（再生数・保存数など）
   caption?: string;
+  postedAt?: number; // 「投稿済み」にした日時（今日の3案タブの週間カウント用）
 }
 
 interface WeeklyPlan {
@@ -72,9 +74,10 @@ function currentGenre(): string {
   return localStorage.getItem("studio_genre") ?? "realestate";
 }
 
-// ジャンルごとにデータを完全分離（不動産とコーチングは別アカウント運用のため）
+// ジャンルごとにデータを完全分離（不動産・コーチング・AIは別アカウント運用のため）
 function gKey(base: string): string {
-  return currentGenre() === "coaching" ? `${base}_coaching` : base;
+  const g = currentGenre();
+  return g === "realestate" ? base : `${base}_${g}`;
 }
 
 async function callAPI(feature: string, input = "", options = {}): Promise<string> {
@@ -159,7 +162,8 @@ function saveLibraryItem(item: LibraryItem) {
   localStorage.setItem(gKey("script_library"), JSON.stringify(next));
 }
 function updateLibraryStatus(id: string, status: ProductionStatus) {
-  localStorage.setItem(gKey("script_library"), JSON.stringify(loadLibrary().map(i => i.id === id ? { ...i, status } : i)));
+  localStorage.setItem(gKey("script_library"), JSON.stringify(loadLibrary().map(i =>
+    i.id === id ? { ...i, status, postedAt: status === "posted" ? (i.postedAt ?? Date.now()) : i.postedAt } : i)));
 }
 function deleteLibraryItem(id: string) {
   localStorage.setItem(gKey("script_library"), JSON.stringify(loadLibrary().filter(i => i.id !== id)));
@@ -286,7 +290,7 @@ function ThreadsPanel({ posts }: { posts: string[] }) {
     setStatuses(p => ({ ...p, [i]: "posting" }));
     try {
       const clean = text.replace(/^【投稿\d+[^】]*】\n?/, "").replace(/\（約\d+文字\）/, "").trim();
-      const res = await fetch("/api/threads-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: clean }) });
+      const res = await fetch("/api/threads-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: clean, genre: currentGenre() }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "投稿失敗");
       setStatuses(p => ({ ...p, [i]: "done" }));
@@ -1096,7 +1100,7 @@ function ThreadsQueueSection() {
   return (
     <section>
       <h2 className="text-sm font-bold text-[#1e2440] mb-1">🧵 Threads自動投稿キュー</h2>
-      <p className="text-xs text-[#9ba0b8] mb-3">{currentGenre() === "coaching" ? "⚠ コーチング用Threadsアカウントの連携までは投稿されず、キューに貯まります" : "毎日19:00に上から1件ずつ自動投稿されます"}</p>
+      <p className="text-xs text-[#9ba0b8] mb-3">{currentGenre() !== "realestate" ? "⚠ このジャンル用Threadsアカウントの連携までは投稿されず、キューに貯まります（連携後は毎日19:00に自動投稿）" : "毎日19:00に上から1件ずつ自動投稿されます"}</p>
       <div className="space-y-2">
         {items.map(q => (
           <div key={q.id} className="flex items-center gap-3 border border-[#e3e5ef] bg-white rounded-xl px-4 py-3">
@@ -1438,22 +1442,294 @@ function AnalyzeTab() {
   );
 }
 
+// ── Picks Tab（今日の3案） ────────────────────────────────────────────
+type Objective = "reach" | "lead" | "archive";
+
+const OBJECTIVES: { key: Objective; jp: string; en: string; desc: string }[] = [
+  { key: "reach",   jp: "リーチ最大化",   en: "REACH",   desc: "バズ最優先。フックの強さと再生ポテンシャルで本日の3案を並べ替えています。" },
+  { key: "lead",    jp: "相談リード",     en: "LEAD",    desc: "相談・DMへの導線を最優先。悩み解決型と実演型を上位に並べています。" },
+  { key: "archive", jp: "実績アーカイブ", en: "ARCHIVE", desc: "信頼の証明を最優先。実績・事例・ストーリー型を上位に並べています。" },
+];
+
+interface DailyPick { type: string; title: string; hook: string; reason: string; score: number }
+
+function parsePicks(text: string): DailyPick[] {
+  const block = extractBlock(text, "PICKS_START", "PICKS_END");
+  if (!block) return [];
+  return block.split("PICK_SPLIT").map(t => t.trim()).filter(Boolean).map(t => {
+    const field = (label: string) =>
+      t.match(new RegExp(`${label}[：:]\\s*([\\s\\S]*?)(?=\\n\\s*(?:タイプ|タイトル|フック|理由|スコア)[：:]|$)`))?.[1].trim() ?? "";
+    const score = parseInt(t.match(/スコア[：:]\s*(\d+)/)?.[1] ?? "0", 10);
+    return { type: field("タイプ"), title: field("タイトル"), hook: field("フック"), reason: field("理由"), score };
+  }).filter(p => p.title).sort((a, b) => b.score - a.score);
+}
+
+// 実績メモの「再生1.2万」「12,000再生」などから再生数を抽出
+function parsePerfViews(perf: string): number | null {
+  const m = perf.match(/(?:再生|▶)\s*[:：]?\s*([\d,.]+)\s*(万)?/) ?? perf.match(/([\d,.]+)\s*(万)?\s*再生/);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(/,/g, ""));
+  if (isNaN(n)) return null;
+  return m[2] === "万" ? n * 10000 : n;
+}
+function fmtViews(v: number): { num: string; unit: string } {
+  return v >= 10000 ? { num: (v / 10000).toFixed(1), unit: "万" } : { num: Math.round(v).toLocaleString(), unit: "" };
+}
+
+interface PickMetrics {
+  stock: number; stockNew: number; toShoot: number;
+  posted: number; goal: number; avgViews: number | null; perfCount: number;
+}
+
+function computePickMetrics(): PickMetrics {
+  const lib = loadLibrary();
+  const bms = loadBookmarks();
+  const weekAgo = Date.now() - 7 * 86400000;
+  const stockItems = lib.filter(i => i.status === "none");
+  const stock = bms.length + stockItems.length;
+  const stockNew = bms.filter(b => b.createdAt > weekAgo).length + stockItems.filter(i => i.createdAt > weekAgo).length;
+  const toShoot = lib.filter(i => i.status === "filming").length;
+  // 今週＝月曜0時から
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
+  const posted = lib.filter(i => i.status === "posted" && (i.postedAt ?? 0) >= monday.getTime()).length;
+  const views = lib.filter(i => i.status === "posted" && i.performance)
+    .map(i => parsePerfViews(i.performance!))
+    .filter((v): v is number => v !== null);
+  const avgViews = views.length > 0 ? views.reduce((a, b) => a + b, 0) / views.length : null;
+  return { stock, stockNew, toShoot, posted, goal: 5, avgViews, perfCount: views.length };
+}
+
+function MetricCard({ en, jp, num, unit, sub, subClass }: {
+  en: string; jp: string; num: string; unit?: string; sub: string; subClass?: string;
+}) {
+  return (
+    <div className="px-5 py-5">
+      <p className="text-[10px] text-[#9ba0b8] font-semibold tracking-widest uppercase">{en}</p>
+      <p className="text-xs text-[#7b809c] mb-2">{jp}</p>
+      <p className="text-4xl font-black text-[#171c33] leading-none">
+        {num}<span className="text-sm font-bold text-[#7b809c] ml-1">{unit}</span>
+      </p>
+      <p className={`text-xs mt-2 font-semibold ${subClass ?? "text-[#9ba0b8]"}`}>{sub}</p>
+    </div>
+  );
+}
+
+function PickCard({ pick, index, made, onMakeScript }: {
+  pick: DailyPick; index: number; made: boolean; onMakeScript: () => void;
+}) {
+  return (
+    <div className="card-hover border border-[#e3e5ef] bg-white rounded-2xl p-5 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-[#9ba0b8] font-semibold tracking-widest">
+          <span className="text-[#5b6cff] font-bold mr-1.5">{String(index + 1).padStart(2, "0")}</span>PICK
+        </span>
+        <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#1c2340] text-white font-bold">{pick.type || "おすすめ"}</span>
+      </div>
+      <p className="display-type text-lg text-[#171c33] leading-snug">{pick.title}</p>
+      <div>
+        <p className="text-[10px] text-[#9ba0b8] font-semibold tracking-widest uppercase mb-1">フック</p>
+        <p className="text-xs text-[#2a3052] leading-relaxed">{pick.hook}</p>
+      </div>
+      <div>
+        <p className="text-[10px] text-[#9ba0b8] font-semibold tracking-widest uppercase mb-1">成果が出る理由</p>
+        <p className="text-xs text-[#5a6080] leading-relaxed">{pick.reason}</p>
+      </div>
+      <div className="mt-auto pt-2">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-[#7b809c]">再生ポテンシャル</span>
+          <span className="text-lg font-black text-[#171c33]">{pick.score}</span>
+        </div>
+        <div className="h-1.5 bg-[#f1f2f7] rounded-full overflow-hidden mb-3">
+          <div className="h-full bg-[#8b96ff] rounded-full transition-all duration-700" style={{ width: `${Math.min(100, pick.score)}%` }} />
+        </div>
+        <button onClick={onMakeScript}
+          className={`w-full text-xs py-2.5 font-bold rounded-xl transition-colors ${
+            made ? "border border-green-300 bg-green-50 text-green-600"
+                 : "btn-pop bg-[#1c2340] hover:bg-[#2a3358] text-white"}`}>
+          {made ? "✅ 台本化済み（台本生成タブへ）" : "🎬 この案を台本化する"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PicksTab({ goScript }: { goScript: () => void }) {
+  const [objective, setObjective] = useState<Objective>("reach");
+  const [picks, setPicks] = useState<DailyPick[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [metrics, setMetrics] = useState<PickMetrics | null>(null);
+  const [made, setMade] = useState<string[]>([]);
+  const [genDate, setGenDate] = useState("");
+
+  useEffect(() => { setMetrics(computePickMetrics()); }, []);
+
+  const todayStr = new Date().toLocaleDateString("ja-JP");
+  const cacheKey = (o: Objective) => gKey(`daily_picks_${o}`);
+
+  const loadCache = (o: Objective): DailyPick[] | null => {
+    try {
+      const c = JSON.parse(localStorage.getItem(cacheKey(o)) ?? "null");
+      return c && c.date === todayStr && Array.isArray(c.picks) && c.picks.length > 0 ? c.picks : null;
+    } catch { return null; }
+  };
+
+  const generate = async (o: Objective, force = false) => {
+    if (!force) {
+      const cached = loadCache(o);
+      if (cached) { setPicks(cached); setGenDate(todayStr); return; }
+    }
+    setLoading(true);
+    setPicks(null);
+    const meta = OBJECTIVES.find(x => x.key === o)!;
+    const existing = loadLibrary().slice(0, 10).map(i => `・${i.title}`).join("\n");
+    const input = `【今日の目的】${meta.jp}\n\n【既にストック済みのネタ（重複禁止）】\n${existing || "なし"}` + buildPerfContext();
+    const res = await callAPI("daily_picks", input);
+    const parsed = parsePicks(res);
+    if (parsed.length > 0) localStorage.setItem(cacheKey(o), JSON.stringify({ date: todayStr, picks: parsed }));
+    setPicks(parsed);
+    setGenDate(todayStr);
+    setLoading(false);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { generate(objective); }, [objective]);
+
+  const makeScript = (p: DailyPick) => {
+    createSessionFromIdea(`タイトル：${p.title}\nタイプ：${p.type}\nフック：「${p.hook}」\nなぜ伸びるか：${p.reason}`);
+    setMade(prev => [...prev, p.title]);
+    goScript();
+  };
+
+  const objMeta = OBJECTIVES.find(x => x.key === objective)!;
+  const avg = metrics?.avgViews != null ? fmtViews(metrics.avgViews) : null;
+
+  return (
+    <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-4 md:px-8 py-6 space-y-9">
+      {/* 01 目的切替 */}
+      <section>
+        <div className="flex items-baseline gap-3 mb-4">
+          <span className="text-xs font-bold text-[#5b6cff]">01</span>
+          <h2 className="display-type text-base text-[#171c33]">目的切替</h2>
+          <span className="text-[10px] text-[#9ba0b8] font-semibold tracking-widest uppercase">Objective</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-4 md:gap-8">
+          <div className="flex border border-[#d6d9e6] rounded-xl overflow-hidden">
+            {OBJECTIVES.map(o => (
+              <button key={o.key} onClick={() => setObjective(o.key)}
+                className={`px-5 py-3 text-left transition-colors ${
+                  objective === o.key ? "bg-[#1c2340] text-white" : "bg-white text-[#5a6080] hover:text-[#171c33]"}`}>
+                <span className="block text-xs font-bold">{o.jp}</span>
+                <span className={`block text-[9px] tracking-widest mt-0.5 ${objective === o.key ? "text-white/50" : "text-[#9ba0b8]"}`}>{o.en}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-[#7b809c] leading-relaxed max-w-md">{objMeta.desc}</p>
+        </div>
+      </section>
+
+      {/* 02 指標 */}
+      <section>
+        <div className="flex items-baseline gap-3 mb-4">
+          <span className="text-xs font-bold text-[#5b6cff]">02</span>
+          <h2 className="display-type text-base text-[#171c33]">指標</h2>
+          <span className="text-[10px] text-[#9ba0b8] font-semibold tracking-widest uppercase">Metrics</span>
+        </div>
+        {metrics && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 border border-[#e3e5ef] bg-white rounded-2xl divide-x divide-y lg:divide-y-0 divide-[#e3e5ef] overflow-hidden">
+            <MetricCard en="Stock" jp="ネタストック" num={String(metrics.stock)} unit="本"
+              sub={metrics.stockNew > 0 ? `+${metrics.stockNew} 今週追加` : "保留ネタ＋未着手台本"}
+              subClass={metrics.stockNew > 0 ? "text-green-600" : undefined} />
+            <MetricCard en="To Shoot" jp="撮影待ち" num={String(metrics.toShoot)} unit="本"
+              sub={metrics.toShoot > 0 ? "台本完成・撮影すれば投稿できます" : "撮影待ちなし"}
+              subClass={metrics.toShoot > 0 ? "text-orange-500" : undefined} />
+            <MetricCard en="Posted" jp="今週投稿" num={String(metrics.posted)} unit={`/ ${metrics.goal}本`}
+              sub={metrics.posted >= metrics.goal ? "🎉 今週の目標達成！" : `目標まで残り${metrics.goal - metrics.posted}本`}
+              subClass={metrics.posted >= metrics.goal ? "text-green-600" : undefined} />
+            <MetricCard en="Avg Views" jp="平均再生" num={avg ? avg.num : "—"} unit={avg?.unit}
+              sub={avg ? `実績メモ${metrics.perfCount}本から算出` : "ライブラリの実績メモから自動算出"} />
+          </div>
+        )}
+      </section>
+
+      {/* 03 今日の3案 */}
+      <section>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <div className="flex items-baseline gap-3">
+            <span className="text-xs font-bold text-[#5b6cff]">03</span>
+            <h2 className="display-type text-base text-[#171c33]">今日の3案</h2>
+            <span className="text-[10px] text-[#9ba0b8] font-semibold tracking-widest uppercase">Today&apos;s Picks</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {genDate && !loading && <span className="text-xs text-[#9ba0b8]">{genDate} 生成・再生ポテンシャル順</span>}
+            <button onClick={() => generate(objective, true)} disabled={loading}
+              className="text-xs px-3 py-1.5 rounded-lg border border-[#d6d9e6] text-[#5a6080] hover:text-[#171c33] hover:border-[#5b6cff] disabled:opacity-40 transition-colors">
+              🔄 作り直す
+            </button>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="bg-white border border-[#e3e5ef] rounded-2xl p-5 max-w-md">
+            <Spinner label="編成局長が今日の3案を選定中…（リサーチ銀行・実績・最新検索を参照）" />
+          </div>
+        )}
+
+        {!loading && picks && picks.length === 0 && (
+          <div className="text-center py-14 text-[#9ba0b8]">
+            <div className="text-4xl mb-3">🤔</div>
+            <p className="text-sm">3案の生成に失敗しました。「作り直す」をタップしてください</p>
+          </div>
+        )}
+
+        {!loading && picks && picks.length > 0 && (
+          <div className="stagger grid grid-cols-1 md:grid-cols-3 gap-4">
+            {picks.map((p, i) => (
+              <PickCard key={`${objective}-${i}`} pick={p} index={i}
+                made={made.includes(p.title)}
+                onMakeScript={() => makeScript(p)} />
+            ))}
+          </div>
+        )}
+
+        <p className="text-xs text-[#9ba0b8] mt-4 leading-relaxed">
+          💡 「台本化する」→ 台本生成タブでAI上司レビュー付きの完成台本に → 「✅ このまま使う」でThreads自動投稿キューへ。ここまでがワンストップです。
+        </p>
+      </section>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────
+const GENRE_META: Record<Genre, { btn: string; tagline: string; engine: string }> = {
+  realestate: { btn: "🏠 不動産",     tagline: "不動産アカウントを、仕組みで伸ばす。", engine: "Real Estate Growth Engine" },
+  coaching:   { btn: "🎯 コーチング", tagline: "コーチング発信を、仕組みで伸ばす。",   engine: "Coaching Growth Engine" },
+  ai:         { btn: "🤖 AI",         tagline: "AI発信を、仕組みで伸ばす。",           engine: "AI Growth Engine" },
+};
+
+function applyGenreClass(g: Genre) {
+  document.documentElement.classList.toggle("coaching", g === "coaching");
+  document.documentElement.classList.toggle("ai", g === "ai");
+}
+
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("script");
+  const [tab, setTab] = useState<Tab>("picks");
   const [dark, setDark] = useState(false);
-  const [genre, setGenre] = useState<"realestate" | "coaching">("realestate");
+  const [genre, setGenre] = useState<Genre>("realestate");
 
   useEffect(() => {
-    const g = (localStorage.getItem("studio_genre") ?? "realestate") as "realestate" | "coaching";
+    const saved = localStorage.getItem("studio_genre");
+    const g: Genre = saved === "coaching" || saved === "ai" ? saved : "realestate";
     setGenre(g);
-    document.documentElement.classList.toggle("coaching", g === "coaching");
+    applyGenreClass(g);
   }, []);
 
-  const switchGenre = (g: "realestate" | "coaching") => {
+  const switchGenre = (g: Genre) => {
     setGenre(g);
     localStorage.setItem("studio_genre", g);
-    document.documentElement.classList.toggle("coaching", g === "coaching");
+    applyGenreClass(g);
   };
 
   // 初回はOS設定に追従、以降はlocalStorageの選択を維持
@@ -1472,6 +1748,7 @@ export default function Home() {
   };
 
   const tabs: { key: Tab; en: string; jp: string }[] = [
+    { key: "picks",     en: "Today",   jp: "今日の3案" },
     { key: "weekly",    en: "Plan",    jp: "週間プラン" },
     { key: "script",    en: "Script",  jp: "台本生成" },
     { key: "library",   en: "Stock",   jp: "ライブラリ" },
@@ -1490,23 +1767,21 @@ export default function Home() {
             R agent <span className="text-[#8b96ff]">SNS studio.</span>
           </h1>
           <p className="text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">
-            {genre === "coaching" ? "コーチング発信を、仕組みで伸ばす。" : "不動産アカウントを、仕組みで伸ばす。"}
+            {GENRE_META[genre].tagline}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden sm:block text-[10px] text-white/30 font-medium tracking-widest uppercase">
-            {genre === "coaching" ? "Coaching Growth Engine" : "Real Estate Growth Engine"}
+            {GENRE_META[genre].engine}
           </span>
           {/* ジャンル切替 */}
           <div className="flex rounded-full border border-white/15 overflow-hidden text-[11px] font-bold">
-            <button onClick={() => switchGenre("realestate")}
-              className={`px-3 py-1.5 transition-colors ${genre === "realestate" ? "bg-white text-[#171a2c]" : "text-white/50 hover:text-white"}`}>
-              🏠 不動産
-            </button>
-            <button onClick={() => switchGenre("coaching")}
-              className={`px-3 py-1.5 transition-colors ${genre === "coaching" ? "bg-white text-[#26282e]" : "text-white/50 hover:text-white"}`}>
-              🎯 コーチング
-            </button>
+            {(Object.keys(GENRE_META) as Genre[]).map(g => (
+              <button key={g} onClick={() => switchGenre(g)}
+                className={`px-3 py-1.5 transition-colors whitespace-nowrap ${genre === g ? "bg-white text-[#171a2c]" : "text-white/50 hover:text-white"}`}>
+                {GENRE_META[g].btn}
+              </button>
+            ))}
           </div>
           <button onClick={toggleTheme} aria-label="テーマ切替"
             className="btn-pop w-9 h-9 rounded-full border border-white/15 text-base flex items-center justify-center hover:border-white/40 transition-colors">
@@ -1533,6 +1808,7 @@ export default function Home() {
         </div>
       </nav>
       <main key={`${tab}-${genre}`} className="anim-in mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
+        {tab === "picks"   && <PicksTab goScript={() => setTab("script")} />}
         {tab === "weekly"  && <WeeklyTab goScript={() => setTab("script")} />}
         {tab === "script"  && <ScriptTab />}
         {tab === "library" && <LibraryTab />}
