@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// 平文パスワードの代わりに、パスワード+秘密鍵のハッシュをセッショントークンとして使う
+// （Cookieが漏れても素のパスワードは復元できない）
+async function sessionToken(pass: string): Promise<string> {
+  const secret = process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1";
+  const data = new TextEncoder().encode(`${pass}:${secret}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 // アプリ全体をパスワードで保護（合言葉はVercel環境変数 APP_PASSWORD で変更可能）
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const pass = process.env.APP_PASSWORD ?? "2424";
+  const expected = await sessionToken(pass);
   const auth = request.cookies.get("studio_auth")?.value;
-  if (auth === pass) {
+  if (auth === expected) {
     // 操作があるたびに10分延長（10分間無操作なら再ログイン要求）
     const res = NextResponse.next();
-    res.cookies.set("studio_auth", pass, { maxAge: 600, httpOnly: true, sameSite: "lax", path: "/" });
+    res.cookies.set("studio_auth", expected, { maxAge: 600, httpOnly: true, sameSite: "lax", path: "/", secure: true });
     return res;
   }
 

@@ -1177,6 +1177,77 @@ function ResearchBankSection() {
   );
 }
 
+interface OvernightItem {
+  id: string; genre: string; title: string; script: string;
+  threads: string[]; caption: string | null; status: string;
+}
+
+function OvernightSection({ onApproved }: { onApproved: () => void }) {
+  const [items, setItems] = useState<OvernightItem[]>([]);
+  const [enabled, setEnabled] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const reload = () => {
+    fetch(`/api/library?genre=${currentGenre()}`).then(r => r.json())
+      .then(d => {
+        setEnabled(d.enabled ?? false);
+        setItems((d.items ?? []).filter((i: OvernightItem) => i.status === "pending_review"));
+      })
+      .catch(() => setEnabled(false));
+  };
+  useEffect(() => { reload(); }, []);
+
+  if (!enabled || items.length === 0) return null;
+
+  const approve = async (item: OvernightItem) => {
+    // ✅ 目視確認して確定 → ライブラリに保存＋Threadsキューへ
+    saveLibraryItem({ id: item.id, title: item.title, script: item.script, threads: item.threads, caption: item.caption ?? undefined, status: "none", createdAt: Date.now() });
+    if (item.threads.length > 0) {
+      fetch("/api/threads-queue", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: item.title, posts: item.threads, genre: currentGenre() }),
+      }).catch(() => {});
+    }
+    await fetch(`/api/library?id=${item.id}`, { method: "DELETE" }).catch(() => {});
+    reload(); onApproved();
+  };
+  const discard = async (id: string) => {
+    await fetch(`/api/library?id=${id}`, { method: "DELETE" }).catch(() => {});
+    reload();
+  };
+
+  return (
+    <section>
+      <h2 className="text-sm font-bold text-[#1e2440] mb-1">🌙 深夜生成された台本（要確認）</h2>
+      <p className="text-xs text-[#9ba0b8] mb-3">寝ている間にAIチームが作った台本です。目を通してから「✅承認」で確定・Threadsキューへ投入されます</p>
+      <div className="stagger space-y-3">
+        {items.map(item => (
+          <div key={item.id} className="card-hover border border-[#5b6cff]/40 bg-white rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-bold text-[#171c33]">{item.title}</p>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => setOpenId(openId === item.id ? null : item.id)}
+                  className="btn-pop text-xs px-3 py-1.5 border border-[#d6d9e6] rounded-lg text-[#5a6080]">
+                  {openId === item.id ? "閉じる" : "台本を見る"}
+                </button>
+                <button onClick={() => discard(item.id)}
+                  className="btn-pop text-xs px-3 py-1.5 border border-red-200 text-red-500 rounded-lg">✕ 却下</button>
+                <button onClick={() => approve(item)}
+                  className="btn-pop text-xs px-3 py-1.5 bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-lg">
+                  ✅ 承認して確定
+                </button>
+              </div>
+            </div>
+            {openId === item.id && (
+              <pre className="text-xs text-[#2a3052] whitespace-pre-wrap leading-relaxed border-t border-[#e3e5ef] pt-3 mt-1">{item.script}</pre>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function LibraryTab() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [bookmarks, setBookmarks] = useState<BookmarkedIdea[]>([]);
@@ -1186,6 +1257,7 @@ function LibraryTab() {
 
   return (
     <div className="overflow-y-auto output-scroll h-[calc(100vh-185px)] px-3 md:px-6 py-5 space-y-8">
+      <OvernightSection onApproved={reload} />
       <ResearchBankSection />
       <ThreadsQueueSection />
       {/* 保留ネタ案 */}
