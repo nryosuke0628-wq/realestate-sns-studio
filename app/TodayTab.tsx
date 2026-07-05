@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import EditorTab from "./EditorTab";
 import RecordingPrompter from "./RecordingPrompter";
+import { currentGenre, saveLibraryItem } from "@/lib/studio-storage";
 
 // 🌅 Today：1日の作業がここで完結する画面
 // 深夜生成された台本 → 承認 → プロンプター撮影（or 動画ドロップ）→ 自動編集 → 完成
@@ -11,26 +12,12 @@ interface OvernightItem {
   threads: string[]; caption: string | null; status: string; source: string;
 }
 
-function currentGenre(): string {
-  if (typeof window === "undefined") return "realestate";
-  return localStorage.getItem("studio_genre") ?? "realestate";
-}
-function gKey(base: string): string {
-  const g = currentGenre();
-  return g === "realestate" ? base : `${base}_${g}`;
-}
-// ローカルの台本ストックに保存（承認時）
 function saveToLocalLibrary(item: OvernightItem) {
-  try {
-    const key = gKey("script_library");
-    const list = JSON.parse(localStorage.getItem(key) ?? "[]") as object[];
-    const entry = {
-      id: item.id, title: item.title, script: item.script,
-      threads: item.threads ?? [], caption: item.caption ?? undefined,
-      status: "none", createdAt: Date.now(),
-    };
-    localStorage.setItem(key, JSON.stringify([entry, ...list.filter((i) => (i as { id: string }).id !== item.id)]));
-  } catch { /* 保存失敗してもフローは継続 */ }
+  saveLibraryItem({
+    id: item.id, title: item.title, script: item.script,
+    threads: item.threads ?? [], caption: item.caption ?? undefined,
+    status: "none", createdAt: Date.now(),
+  });
 }
 
 function Spinner({ label }: { label: string }) {
