@@ -17,7 +17,10 @@ async function callGenerate(origin: string, feature: string, input: string, genr
     body: JSON.stringify({ feature, input, genre }),
   });
   const data = await res.json();
-  return data.reply ?? "";
+  if (data.error) throw new Error(`${feature}: ${data.error}`);
+  const reply = data.reply ?? "";
+  if (!reply.trim()) throw new Error(`${feature}: 応答が空でした`);
+  return reply;
 }
 
 function extractBlock(text: string, start: string, end: string): string {
@@ -68,10 +71,14 @@ export async function GET(request: NextRequest) {
 
   await Promise.all(genres.map(async (genre) => {
     try {
-      // ① 今日の3案（リーチ最大化目的で自動選定）
-      const picksRes = await callGenerate(origin, "daily_picks", "【今日の目的】リーチ最大化", genre);
-      const ideas = parseIdeas(picksRes);
-      if (ideas.length === 0) { results[genre] = { skipped: "案生成に失敗" }; return; }
+      // ① 今日の3案（リーチ最大化目的で自動選定）。フォーマット揺れは1回リトライ
+      let picksRes = await callGenerate(origin, "daily_picks", "【今日の目的】リーチ最大化", genre);
+      let ideas = parseIdeas(picksRes);
+      if (ideas.length === 0) {
+        picksRes = await callGenerate(origin, "daily_picks", "【今日の目的】リーチ最大化\n※必ずPICKS_START〜PICKS_ENDマーカーで出力すること", genre);
+        ideas = parseIdeas(picksRes);
+      }
+      if (ideas.length === 0) { results[genre] = { skipped: "案生成に失敗（2回試行）" }; return; }
       const best = ideas.reduce((a, b) => (extractScore(b) > extractScore(a) ? b : a));
 
       // ② 討論フル実行
@@ -93,6 +100,8 @@ export async function GET(request: NextRequest) {
       ]);
       const threads = parseThreads(thrRes);
       const caption = extractBlock(capRes, "CAPTION_START", "CAPTION_END") || capRes;
+
+      if (finalScript.trim().length < 100) throw new Error("最終台本が短すぎるため破棄（生成失敗の可能性）");
 
       // ④ サーバー側ライブラリへ保存（朝の目視確認待ち = pending_review）
       const id = `overnight-${genre}-${Date.now()}`;
