@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { appSecret } from "@/lib/secret";
 
-export const maxDuration = 60;
+export const maxDuration = 300; // 討論フルパイプライン（AI呼び出し7回）は60秒を超えるため
 
 // 🌙 深夜バッチ：ジャンルごとに「今日の3案→上位案を選定→討論フル実行→
 // 台本・キャプション・Threads文案」を完成させ、サーバー側ライブラリに保存する。
@@ -11,7 +12,7 @@ async function callGenerate(origin: string, feature: string, input: string, genr
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-internal-key": process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1",
+      "x-internal-key": await appSecret(),
     },
     body: JSON.stringify({ feature, input, genre }),
   });
@@ -80,10 +81,8 @@ export async function GET(request: NextRequest) {
         callGenerate(origin, "realestate_expert", draft, genre),
         callGenerate(origin, "sns_consultant", draft, genre),
       ]);
-      const revCtx = `【初稿台本】\n${draft}\n\n【専門家レビュー】\n${re1}\n\n【SNSコンサルレビュー】\n${re2}`;
-      const revRes = await callGenerate(origin, "script_revision", revCtx, genre);
-      const revised = extractBlock(revRes, "REVISED_START", "REVISED_END") || revRes;
-      const finalCtx = `【改訂台本】\n${revised}\n\n【専門家レビュー】\n${re1}\n\n【SNSコンサルレビュー】\n${re2}`;
+      // 深夜バッチは改訂ステップを省略し、レビュー指摘を最終台本に直接反映（実行時間短縮）
+      const finalCtx = `【初稿台本】\n${draft}\n\n【専門家レビュー】\n${re1}\n\n【SNSコンサルレビュー】\n${re2}\n\n※上記レビューの指摘を全て反映して最終台本を仕上げること`;
       const finalRes = await callGenerate(origin, "final_script", finalCtx, genre);
       const finalScript = extractBlock(finalRes, "FINAL_START", "FINAL_END") || finalRes;
 

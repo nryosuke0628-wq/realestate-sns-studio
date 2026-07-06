@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionToken } from "@/lib/secret";
 
 // メモリ内の簡易レート制限（同一サーバーインスタンス内のみ有効。総当たり対策の第一段）
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -14,13 +15,6 @@ function tooManyAttempts(ip: string): boolean {
   }
   rec.count++;
   return rec.count > MAX_ATTEMPTS;
-}
-
-async function sessionToken(pass: string): Promise<string> {
-  const secret = process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1";
-  const data = new TextEncoder().encode(`${pass}:${secret}`);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 export async function POST(request: NextRequest) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 60;
+export const maxDuration = 300; // trend+insights+overnightを直列実行するため
 
 // 朝の定期処理をまとめて実行（Vercel無料枠のCron上限2本対策）
 // 1. トレンド収集 → 2. Instagramインサイト取得 → 3. 深夜台本生成（今日の3案フル討論）

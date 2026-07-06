@@ -1,24 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// 平文パスワードの代わりに、パスワード+秘密鍵のハッシュをセッショントークンとして使う
-// （Cookieが漏れても素のパスワードは復元できない）
-async function sessionToken(pass: string): Promise<string> {
-  const secret = process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1";
-  const data = new TextEncoder().encode(`${pass}:${secret}`);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-// サーバー内部（Cronルート→/api/generate等）専用の合言葉。ブラウザには一切送らないヘッダーなので
-// クライアントから偽装できない。APP_PASSWORD_SECRETと同じ値をベースにするので追加設定不要
-function internalKey(): string {
-  return process.env.APP_PASSWORD_SECRET ?? "studio-static-secret-v1";
-}
+import { appSecret, sessionToken } from "./lib/secret";
 
 // アプリ全体をパスワードで保護（合言葉はVercel環境変数 APP_PASSWORD で変更可能）
 export async function middleware(request: NextRequest) {
-  // Cronパイプラインからのサーバー間呼び出し（例：/api/cron/overnight → /api/generate）
-  if (request.headers.get("x-internal-key") === internalKey()) {
+  // Cronパイプラインからのサーバー間呼び出し（例：/api/cron/overnight → /api/generate）。
+  // キーは環境変数からのみ導出されるため、公開リポジトリを読んでも偽装できない
+  const internal = request.headers.get("x-internal-key");
+  if (internal && internal === (await appSecret())) {
     return NextResponse.next();
   }
 
