@@ -137,7 +137,7 @@ export default function TodayTab() {
 
   // 🔄 作り直し / 今すぐ生成（深夜バッチを単ジャンルで手動実行）
   const regenerate = async (discardId?: string) => {
-    setBusy("🌙 AIチームが台本を作成中…（1分ほどかかります）");
+    setBusy("🌙 AIチームが台本を作成中…（1〜2分かかります）");
     if (discardId) await fetch(`/api/library?id=${discardId}`, { method: "DELETE" }).catch(() => {});
     try {
       await fetch(`/api/cron/overnight?genre=${currentGenre()}`);
