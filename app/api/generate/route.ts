@@ -261,6 +261,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ reply });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "AI応答の取得に失敗しました" }, { status: 500 });
+    // 認証済みユーザーにしか届かないので、原因究明できる具体的なメッセージを返す
+    let msg = error instanceof Error ? error.message : "AI応答の取得に失敗しました";
+    if (msg.includes("credit balance is too low")) {
+      msg = "Anthropic APIのクレジット残高が不足しています。console.anthropic.com の Billing でチャージしてください";
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
