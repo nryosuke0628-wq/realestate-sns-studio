@@ -53,8 +53,8 @@ const STYLES: Record<StyleKey, {
   y: string; fontsize: number; hookSize: number;
   color: string; hookColor: string; box?: string;
 }> = {
-  center:  { label: "センター",   desc: "画面中央に特大文字（基本形）", y: "(h-th)/2",   fontsize: 50, hookSize: 64, color: "white",    hookColor: "yellow" },
-  classic: { label: "定番下",     desc: "下テロップ・白＋フック黄",     y: "h-th-170",   fontsize: 46, hookSize: 58, color: "white",    hookColor: "yellow" },
+  center:  { label: "センター",   desc: "画面中央に特大文字（基本形）", y: "(h-th)/2",   fontsize: 50, hookSize: 62, color: "white",    hookColor: "white" },
+  classic: { label: "定番下",     desc: "下テロップ・白オンリー",       y: "h-th-170",   fontsize: 46, hookSize: 58, color: "white",    hookColor: "white" },
   white:   { label: "白オンリー", desc: "色なしシンプル（中央）",       y: "(h-th)/2",   fontsize: 46, hookSize: 60, color: "white",    hookColor: "white" },
   pop:     { label: "ビビッド",   desc: "ピンク＋黒カード背景",         y: "h-th-190",   fontsize: 46, hookSize: 58, color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=16" },
   karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",     y: "h-th-120",   fontsize: 44, hookSize: 56, color: "0x7DE8FF", hookColor: "0x7DE8FF" },
@@ -91,6 +91,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
   const pipelineDoneRef = useRef<string>("");
   // スタイル・仕上げ
   const [style, setStyle] = useState<StyleKey>("center"); // 基本はテロップ中央
+  const [vertical, setVertical] = useState(false); // 縦書きテロップ
   const [shift, setShift] = useState(0); // テロップ全体の時間シフト（秒）
   const [speed, setSpeed] = useState(1);       // 倍速（自動設定・手動上書き可）
   const [autoSpeed, setAutoSpeed] = useState<number | null>(null);
@@ -436,11 +437,16 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
       setStatusMsg("動画を読み込み中…");
       await ffmpeg.writeFile("input.mp4", await fetchFile(file));
 
-      // テロップテキストをファイル化（エスケープ問題回避）
+      // テロップテキストをファイル化（エスケープ問題回避）。縦書きは1文字ずつ改行
       const enc = new TextEncoder();
+      const toVert = (t: string) => t.split("").join("\n");
       for (let i = 0; i < shiftedCues.length; i++) {
-        if (lang !== "zh") await ffmpeg.writeFile(`t${i}.txt`, enc.encode(shiftedCues[i].text));
-        if (lang !== "ja" && zhLines[i]) await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhLines[i]));
+        const jaText = vertical ? toVert(shiftedCues[i].text) : shiftedCues[i].text;
+        if (lang !== "zh") await ffmpeg.writeFile(`t${i}.txt`, enc.encode(jaText));
+        if (lang !== "ja" && zhLines[i]) {
+          const zhText = vertical ? toVert(zhLines[i]) : zhLines[i];
+          await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhText));
+        }
       }
 
       // フィルタグラフ：trim+concat → 9:16クロップ＋30fps → スタイル別テロップ
@@ -459,11 +465,25 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         const isHook = c.start < 3; // 冒頭フックは大きく強調
         // 倍速適用後の出力タイムラインに合わせて表示時刻を換算
         const enable = `enable=between(t\\,${(c.start / speed).toFixed(2)}\\,${(c.end / speed).toFixed(2)})`;
+        const color = isHook ? st.hookColor : st.color;
+
+        if (vertical) {
+          // 縦書き：1列を画面中央に、上寄せ。高さ(1080px)に収まるようフォント自動縮小
+          const vfit = (base: number, text: string) => Math.min(base, Math.max(30, Math.floor(1000 / Math.max(1, text.length))));
+          const vcommon = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:line_spacing=8:x=(w-tw)/2`;
+          const jaTxt = lang === "zh" ? null : `t${i}.txt`;
+          if (jaTxt) drawParts.push(`drawtext=textfile=${jaTxt}:${vcommon}:fontsize=${vfit(isHook ? st.hookSize : st.fontsize, c.text)}:fontcolor=${color}:y=90${offExpr}:${enable}`);
+          if ((lang === "zh" || lang === "both") && zhLines[i]) {
+            const zx = lang === "both" ? "x=(w-tw)/2-70" : "x=(w-tw)/2";
+            drawParts.push(`drawtext=textfile=z${i}.txt:fontfile=font.otf:borderw=5:bordercolor=black@0.9:line_spacing=8:${zx}:fontsize=${vfit(lang === "both" ? 36 : (isHook ? st.hookSize : st.fontsize), zhLines[i])}:fontcolor=white:y=90${offExpr}:${enable}`);
+          }
+          continue;
+        }
+
         const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
         // 見切れ防止：長い行はフォントを自動縮小（720px幅に収まるサイズへ）
         const fit = (base: number, text: string) => Math.min(base, Math.max(26, Math.floor(660 / Math.max(1, text.length))));
         const size = fit(isHook ? st.hookSize : st.fontsize, c.text);
-        const color = isHook ? st.hookColor : st.color;
         if (lang === "ja") {
           drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}${offExpr}:${enable}`);
         } else if (lang === "zh") {
@@ -720,14 +740,16 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
                   onTimeUpdate={e => setPreviewTime((e.target as HTMLVideoElement).currentTime)}
                   className="w-full aspect-[9/16] object-cover" />
                 {activeCueIdx >= 0 && (
-                  <div className={`absolute inset-x-2 text-center pointer-events-none ${STYLES[style].y === "(h-th)/2" ? "top-1/2 -translate-y-1/2" : "bottom-[13%]"}`}>
+                  <div className={`absolute inset-x-2 flex justify-center gap-1 pointer-events-none ${
+                    vertical ? "top-[6%]" : STYLES[style].y === "(h-th)/2" ? "top-1/2 -translate-y-1/2 text-center" : "bottom-[13%] text-center"
+                  }`}>
                     <span className="inline-block text-white font-black text-sm leading-snug px-1"
-                      style={{ textShadow: "0 0 4px #000, 0 0 8px #000, 2px 2px 2px #000" }}>
+                      style={{ textShadow: "0 0 4px #000, 0 0 8px #000, 2px 2px 2px #000", ...(vertical ? { writingMode: "vertical-rl" as const } : {}) }}>
                       {shiftedCues[activeCueIdx].text}
                     </span>
                     {lang !== "ja" && zhLines[activeCueIdx] && (
-                      <span className="block text-white/90 font-bold text-[10px] mt-0.5"
-                        style={{ textShadow: "0 0 4px #000, 2px 2px 2px #000" }}>
+                      <span className={`text-white/90 font-bold text-[10px] ${vertical ? "" : "block mt-0.5"}`}
+                        style={{ textShadow: "0 0 4px #000, 2px 2px 2px #000", ...(vertical ? { writingMode: "vertical-rl" as const } : {}) }}>
                         {zhLines[activeCueIdx]}
                       </span>
                     )}
@@ -770,6 +792,20 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
             ))}
           </div>
           <p className="text-xs text-[#9ba0b8]">{STYLES[style].desc} ／ 出力は縦9:16・720×1280・30fpsに自動整形</p>
+
+          {/* テロップの向き */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-[#7b809c]">向き：</span>
+            <button onClick={() => setVertical(false)}
+              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${!vertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
+              ↔ 横書き
+            </button>
+            <button onClick={() => setVertical(true)}
+              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${vertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
+              ↕ 縦書き
+            </button>
+          </div>
+
           <label className="flex items-center gap-2 text-xs text-[#5a6080] cursor-pointer">
             <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-indigo-500" />
             🎤 音声クリーンアップ（ノイズ除去＋音量をリール標準に正規化）
