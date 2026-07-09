@@ -2,10 +2,23 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "next-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
       "name": "site-preview",
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "4599", "--directory", "site"],
       "port": 4599
+    },
+    {
+      "name": "site-preview-2",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4611", "--directory", "site"],
+      "port": 4611,
+      "autoPort": false
     }
   ]
 }

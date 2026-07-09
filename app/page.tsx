@@ -45,10 +45,10 @@ export default function Home() {
     applyGenreClass(g);
   };
 
-  // 初回はOS設定に追従、以降はlocalStorageの選択を維持
+  // 初回はダーク（近未来テーマ）がデフォルト、以降はlocalStorageの選択を維持
   useEffect(() => {
     const saved = localStorage.getItem("theme");
-    const initial = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const initial = saved ? saved === "dark" : true;
     setDark(initial);
     document.documentElement.classList.toggle("dark", initial);
   }, []);

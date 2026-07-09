@@ -357,6 +357,28 @@ export function findPhraseRanges(transcript: Phrase[], phrase: string): Phrase[]
   });
 }
 
+// ── 語ごとポップ（1語ずつ出す）用のチャンク分割 ─────────────
+// Whisperの語単位タイムスタンプが無い環境での擬似実装。
+// 日本語を助詞・句読点の後ろで区切り、3文字以上のまとまりに詰め直す。
+export function popChunks(text: string, maxChunks = 5): string[] {
+  const raw = text.split(/(?<=[、。！？!?・…\s])|(?<=[はがをにでへともねよ])/).filter(Boolean);
+  let chunks: string[] = [];
+  let buf = "";
+  for (const p of raw) {
+    buf += p;
+    if (buf.replace(/\s/g, "").length >= 3) { chunks.push(buf); buf = ""; }
+  }
+  if (buf) { if (chunks.length) chunks[chunks.length - 1] += buf; else chunks.push(buf); }
+  // 多すぎるチャンクは均等に結合してmaxChunksに収める（drawtext数の爆発を防ぐ）
+  if (chunks.length > maxChunks) {
+    const grouped: string[] = [];
+    const per = Math.ceil(chunks.length / maxChunks);
+    for (let i = 0; i < chunks.length; i += per) grouped.push(chunks.slice(i, i + per).join(""));
+    chunks = grouped;
+  }
+  return chunks.length ? chunks : [text];
+}
+
 // 🔬 相互検証：Geminiの字幕タイミングをRMS波形の実測（発話区間）で検証・補正
 // 「あるAIの出力を別の実測値で検証してから使う」原則の実装
 export function validateTimings(

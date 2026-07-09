@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "frames required" }, { status: 400 });
     }
 
-    const posLabel = expectedPosition === "center" ? "画面中央" : "画面下部";
+    const posLabel = expectedPosition === "center" ? "画面中央" : expectedPosition === "top" ? "画面上部（縦書き）" : "画面下部";
     const prompt = `あなたは動画の仕上げ検品官です。添付はInstagramリール完成動画のフレーム（冒頭・中盤・終盤）です。
 
 【検品項目】

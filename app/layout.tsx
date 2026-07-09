@@ -11,8 +11,13 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // 描画前にテーマ＋ジャンルのクラスを適用（ちらつき防止・ロック画面にも効かせる）
+  const themeInit = `try{var t=localStorage.getItem("theme");if(!t||t==="dark")document.documentElement.classList.add("dark");var g=localStorage.getItem("studio_genre");if(g==="coaching"||g==="sales")document.documentElement.classList.add(g);}catch(e){}`;
   return (
     <html lang="ja">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
       <body>{children}</body>
     </html>
   );

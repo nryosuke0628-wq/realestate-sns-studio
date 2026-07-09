@@ -6,7 +6,7 @@ import {
   detectSpeechSegments, allocateCues, generateSRT, generateCutSheet,
   subtractRanges, encodeWav16k, cuesFromTimings,
   extractEditedAudio, proEditorPass, speechTimeToOriginal, originalToSpeechTime,
-  Phrase, detectRetakes, mergeRange, findPhraseRanges, validateTimings,
+  Phrase, detectRetakes, mergeRange, findPhraseRanges, validateTimings, popChunks,
 } from "@/lib/video";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
@@ -41,23 +41,30 @@ function download(filename: string, content: string | Blob) {
 }
 
 const FONT_URL = "https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@main/Sans/OTF/Japanese/NotoSansCJKjp-Bold.otf";
+// 明朝・縦長明朝スタイル用（Shippori Mincho Bold TTF・約8.5MB）
+const MINCHO_URL = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/shipporimincho/ShipporiMincho-Bold.ttf";
 const CORE_URL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
 
 type Phase = "idle" | "analyzing" | "ready" | "rendering" | "done" | "error";
 type CaptionLang = "ja" | "zh" | "both";
-type StyleKey = "classic" | "white" | "center" | "pop" | "karaoke";
+type StyleKey = "center" | "classic" | "white" | "mincho" | "pro" | "pop" | "karaoke" | "tate";
 
-// テロップスタイルプリセット（バズってる独り語りリールの型）
+// テロップスタイルプリセット（バズってる独り語りリールの型／サイズは1080×1920基準）
+// font: ゴシック(既定) or 明朝 ／ vertical: 縦書き ／ noBorder: 縁なし＋濃い影
 const STYLES: Record<StyleKey, {
   label: string; desc: string;
   y: string; fontsize: number; hookSize: number;
   color: string; hookColor: string; box?: string;
+  font?: "gothic" | "mincho"; vertical?: boolean; noBorder?: boolean; wordPop?: boolean;
 }> = {
-  center:  { label: "センター",   desc: "画面中央に特大文字（基本形）", y: "(h-th)/2",   fontsize: 50, hookSize: 62, color: "white",    hookColor: "white" },
-  classic: { label: "定番下",     desc: "下テロップ・白オンリー",       y: "h-th-170",   fontsize: 46, hookSize: 58, color: "white",    hookColor: "white" },
-  white:   { label: "白オンリー", desc: "色なしシンプル（中央）",       y: "(h-th)/2",   fontsize: 46, hookSize: 60, color: "white",    hookColor: "white" },
-  pop:     { label: "ビビッド",   desc: "ピンク＋黒カード背景",         y: "h-th-190",   fontsize: 46, hookSize: 58, color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=16" },
-  karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",     y: "h-th-120",   fontsize: 44, hookSize: 56, color: "0x7DE8FF", hookColor: "0x7DE8FF" },
+  center:  { label: "センター",   desc: "画面中央に特大文字（基本形）",     y: "(h-th)/2", fontsize: 76, hookSize: 96,  color: "white",    hookColor: "white" },
+  classic: { label: "定番",       desc: "白オンリー・下テロップ",           y: "h-th-255", fontsize: 70, hookSize: 88,  color: "white",    hookColor: "white" },
+  white:   { label: "白オンリー", desc: "色なしシンプル（中央）",           y: "(h-th)/2", fontsize: 70, hookSize: 90,  color: "white",    hookColor: "white" },
+  mincho:  { label: "明朝",       desc: "上品な明朝・全画面タイトル",       y: "(h-th)/2", fontsize: 72, hookSize: 96,  color: "white",    hookColor: "white", font: "mincho" },
+  pro:     { label: "プロ字幕",   desc: "袋文字＋マーカー箱＋特大フック・語ごとポップ", y: "h-th-285", fontsize: 70, hookSize: 112, color: "white", hookColor: "0xFFE24A", box: "box=1:boxcolor=black@0.55:boxborderw=22", wordPop: true },
+  pop:     { label: "ビビッド",   desc: "ピンク＋黒カード背景",             y: "h-th-285", fontsize: 70, hookSize: 88,  color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=24" },
+  karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",         y: "h-th-180", fontsize: 66, hookSize: 84,  color: "0x7DE8FF", hookColor: "0x7DE8FF" },
+  tate:    { label: "縦長明朝",   desc: "縦書き明朝・縁なし白＋濃い影（映画的）", y: "(h-th)/2", fontsize: 78, hookSize: 104, color: "white", hookColor: "white", font: "mincho", vertical: true, noBorder: true },
 };
 
 // presetNarration: Todayタブから承認済み台本を引き継ぐ / injectedFile: 撮影プロンプターの録画をそのまま流し込む
@@ -92,6 +99,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
   // スタイル・仕上げ
   const [style, setStyle] = useState<StyleKey>("center"); // 基本はテロップ中央
   const [vertical, setVertical] = useState(false); // 縦書きテロップ
+  const [wordPop, setWordPop] = useState(false); // 語ごとポップ（1語ずつ出す）
   const [shift, setShift] = useState(0); // テロップ全体の時間シフト（秒）
   const [speed, setSpeed] = useState(1);       // 倍速（自動設定・手動上書き可）
   const [autoSpeed, setAutoSpeed] = useState<number | null>(null);
@@ -163,6 +171,12 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectedFile]);
 
+  // 語ごとポップが標準演出のスタイル（プロ字幕）は自動ON
+  useEffect(() => { if (STYLES[style].wordPop) setWordPop(true); }, [style]);
+
+  // 縦長明朝スタイルは縦書き固定
+  const isVertical = vertical || STYLES[style].vertical === true;
+
   // ナレーション・区間・実測タイミングが変わったらテロップ割り付けを再計算
   useEffect(() => {
     if (segments.length === 0 || !narration.trim()) { setCaptions([]); setCues([]); return; }
@@ -219,45 +233,55 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         : [];
 
       // ── STEP 1: AI監督（元音声からカット判定＋字幕の実測タイミング）
-      log("🧠 AI監督：撮影音声をチェック中…");
+      // 長尺（wav>3.5MB≒110秒超）はGeminiに送れないため、AI監督・採点はスキップして無音カットのみ適用（エラーにしない）
       const fullWav = encodeWav16k(channel, sampleRate);
-      if (fullWav.size > 3.5 * 1024 * 1024) throw new Error("動画が長すぎます（2分以内のテイクに対応）");
-      const dRes = await fetch("/api/video-director", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio: await wavToB64(fullWav), narration, captions: caps }),
-      });
-      const d = await dRes.json();
-      if (d.error) throw new Error(d.error);
+      const tooLong = fullWav.size > 3.5 * 1024 * 1024;
 
-      let segs = d.remove.length > 0 ? subtractRanges(segments, d.remove) : segments;
-      log(d.remove.length > 0 ? `🧠 AI監督：${d.remove.length}箇所の言い淀み・NGをカット` : "🧠 AI監督：カット不要、良いテイクです");
-
-      // 文字起こしベースの言い直し検出（同じフレーズが2回→前の失敗テイクをカット）
-      const tr: Phrase[] = Array.isArray(d.transcript) ? d.transcript : [];
-      setTranscript(tr);
-      if (tr.length > 0) {
-        const retakes = detectRetakes(tr);
-        if (retakes.length > 0) {
-          segs = subtractRanges(segs, retakes);
-          setRetakeCuts(retakes.map(r => ({ ...r, applied: true })));
-          log(`✂️ 言い直し検出：${retakes.length}箇所を自動カット（${retakes.map(r => `「${r.text.slice(0, 12)}…」`).join(" ")}）`);
-        }
-      }
-
+      let segs = segments;
       let timings: ({ start: number; end: number } | undefined)[] | null = null;
-      if (Array.isArray(d.lines) && caps.length > 0) {
-        const t: ({ start: number; end: number } | undefined)[] = [];
-        for (const l of d.lines) if (l.index < caps.length) t[l.index] = { start: l.start, end: l.end };
-        const coverage = t.filter(Boolean).length / caps.length;
-        if (coverage >= 0.7) {
-          // 🔬 相互検証：AIのタイミングを波形実測（発話区間）でチェックして無音上の字幕を補正
-          const validated = validateTimings(t, segs);
-          timings = validated.timings;
-          log(`🎯 字幕タイミングを実測値に補正（${Math.round(coverage * 100)}%カバー）`);
-          if (validated.corrected > 0) log(`🔬 波形実測との相互検証：${validated.corrected}行のズレを自動補正`);
-        } else {
-          log("🎯 実測タイミングが不完全のため推定方式で統一（ズレ防止）");
+      let advice = "";
+
+      if (tooLong) {
+        log("⏱ 長尺のためAI監督はスキップ（無音カットは適用済み）。字幕は推定タイミングで配置します");
+      } else {
+        log("🧠 AI監督：撮影音声をチェック中…");
+        const dRes = await fetch("/api/video-director", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio: await wavToB64(fullWav), narration, captions: caps }),
+        });
+        const d = await dRes.json();
+        if (d.error) throw new Error(d.error);
+
+        segs = d.remove.length > 0 ? subtractRanges(segments, d.remove) : segments;
+        log(d.remove.length > 0 ? `🧠 AI監督：${d.remove.length}箇所の言い淀み・NGをカット` : "🧠 AI監督：カット不要、良いテイクです");
+        advice = d.advice ?? "";
+
+        // 文字起こしベースの言い直し検出（同じフレーズが2回→前の失敗テイクをカット）
+        const tr: Phrase[] = Array.isArray(d.transcript) ? d.transcript : [];
+        setTranscript(tr);
+        if (tr.length > 0) {
+          const retakes = detectRetakes(tr);
+          if (retakes.length > 0) {
+            segs = subtractRanges(segs, retakes);
+            setRetakeCuts(retakes.map(r => ({ ...r, applied: true })));
+            log(`✂️ 言い直し検出：${retakes.length}箇所を自動カット（${retakes.map(r => `「${r.text.slice(0, 12)}…」`).join(" ")}）`);
+          }
+        }
+
+        if (Array.isArray(d.lines) && caps.length > 0) {
+          const t: ({ start: number; end: number } | undefined)[] = [];
+          for (const l of d.lines) if (l.index < caps.length) t[l.index] = { start: l.start, end: l.end };
+          const coverage = t.filter(Boolean).length / caps.length;
+          if (coverage >= 0.7) {
+            // 🔬 相互検証：AIのタイミングを波形実測（発話区間）でチェックして無音上の字幕を補正
+            const validated = validateTimings(t, segs);
+            timings = validated.timings;
+            log(`🎯 字幕タイミングを実測値に補正（${Math.round(coverage * 100)}%カバー）`);
+            if (validated.corrected > 0) log(`🔬 波形実測との相互検証：${validated.corrected}行のズレを自動補正`);
+          } else {
+            log("🎯 実測タイミングが不完全のため推定方式で統一（ズレ防止）");
+          }
         }
       }
 
@@ -266,7 +290,6 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
       let score: number | null = null;
       let issues: string[] = [];
       let reshoot: string[] = [];
-      let advice: string = d.advice ?? "";
       let iter = 0;
 
       for (iter = 1; iter <= 3; iter++) {
@@ -277,7 +300,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         pro.fixes.forEach(f => { if (!allFixes.includes(f)) allFixes.push(f); });
         if (pro.fixes.length > 0) log(`🎬 プロ編集家：${pro.fixes.length}件を自動修正`);
 
-        if (caps.length === 0) break; // 字幕なしなら採点スキップ
+        if (caps.length === 0 || tooLong) break; // 字幕なし／長尺（Geminiに送れない）は採点スキップ
 
         log(`📱 SNSコンサル：編集後の音声を試聴して採点中…（${iter}周目）`);
         const editedWav = encodeWav16k(extractEditedAudio(channel, sampleRate, segs), sampleRate);
@@ -396,6 +419,17 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
   const previewSpeechT = originalToSpeechTime(previewTime, segments);
   const activeCueIdx = shiftedCues.findIndex(c => previewSpeechT >= c.start && previewSpeechT < c.end);
 
+  // 語ごとポップのプレビュー：アクティブCue内の経過に応じて累積表示テキストを算出
+  const activeCueText = (() => {
+    if (activeCueIdx < 0) return "";
+    const c = shiftedCues[activeCueIdx];
+    if (!wordPop || lang !== "ja" || isVertical) return c.text; // 縦書きは書き出しでもポップ無効のため揃える
+    const chunks = popChunks(c.text);
+    const frac = Math.min(1, Math.max(0, (previewSpeechT - c.start) / Math.max(0.01, c.end - c.start)));
+    const shown = Math.max(1, Math.ceil(frac * chunks.length));
+    return chunks.slice(0, shown).join("");
+  })();
+
   // 言語ごとのSRTテキスト生成用：日中2段組は1つの字幕に2行
   const srtCues = (): Cue[] => {
     if (lang === "ja" || zhLines.length === 0) return cues;
@@ -433,21 +467,18 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
 
       setStatusMsg("フォントを読み込み中…");
       await ffmpeg.writeFile("font.otf", await fetchFile(FONT_URL));
+      // 明朝系スタイルのみ明朝フォント（Shippori Mincho）も読み込む
+      if (STYLES[style].font === "mincho") {
+        setStatusMsg("明朝フォントを読み込み中…");
+        await ffmpeg.writeFile("mincho.ttf", await fetchFile(MINCHO_URL));
+      }
 
       setStatusMsg("動画を読み込み中…");
       await ffmpeg.writeFile("input.mp4", await fetchFile(file));
 
-      // テロップテキストをファイル化（エスケープ問題回避）。縦書きは1文字ずつ改行
+      // テロップテキストは描画ループ内でファイル化（語ごとポップは累積テキストを都度書き出し）
       const enc = new TextEncoder();
       const toVert = (t: string) => t.split("").join("\n");
-      for (let i = 0; i < shiftedCues.length; i++) {
-        const jaText = vertical ? toVert(shiftedCues[i].text) : shiftedCues[i].text;
-        if (lang !== "zh") await ffmpeg.writeFile(`t${i}.txt`, enc.encode(jaText));
-        if (lang !== "ja" && zhLines[i]) {
-          const zhText = vertical ? toVert(zhLines[i]) : zhLines[i];
-          await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhText));
-        }
-      }
 
       // フィルタグラフ：trim+concat → 9:16クロップ＋30fps → スタイル別テロップ
       const N = segments.length;
@@ -458,8 +489,15 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
       const concatInputs = segments.map((_, i) => `[v${i}][a${i}]`).join("");
 
       const st = STYLES[style];
+      const fontFile = st.font === "mincho" ? "mincho.ttf" : "font.otf";
+      // 縁取り（既定）or 濃い影のみ（縁なしスタイル＝縦長明朝）
+      const deco = st.noBorder ? "shadowcolor=black@0.92:shadowx=6:shadowy=6" : "borderw=7:bordercolor=black@0.9";
+      // 見切れ防止：長い行はフォントを自動縮小（1080幅／1920高に収める）
+      const fit  = (base: number, text: string) => Math.min(base, Math.max(34, Math.floor(990 / Math.max(1, text.length))));
+      const vfit = (base: number, text: string) => Math.min(base, Math.max(45, Math.floor(1500 / Math.max(1, text.length))));
       const drawParts: string[] = [];
       const offExpr = capOffset === 0 ? "" : capOffset > 0 ? `+${capOffset}` : `${capOffset}`;
+
       for (let i = 0; i < shiftedCues.length; i++) {
         const c = shiftedCues[i];
         const isHook = c.start < 3; // 冒頭フックは大きく強調
@@ -467,35 +505,61 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         const enable = `enable=between(t\\,${(c.start / speed).toFixed(2)}\\,${(c.end / speed).toFixed(2)})`;
         const color = isHook ? st.hookColor : st.color;
 
-        if (vertical) {
-          // 縦書き：1列を画面中央に、上寄せ。高さ(1080px)に収まるようフォント自動縮小
-          const vfit = (base: number, text: string) => Math.min(base, Math.max(30, Math.floor(1000 / Math.max(1, text.length))));
-          const vcommon = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:line_spacing=8:x=(w-tw)/2`;
-          const jaTxt = lang === "zh" ? null : `t${i}.txt`;
-          if (jaTxt) drawParts.push(`drawtext=textfile=${jaTxt}:${vcommon}:fontsize=${vfit(isHook ? st.hookSize : st.fontsize, c.text)}:fontcolor=${color}:y=90${offExpr}:${enable}`);
+        // ── 縦書き（縦書きトグル or 縦長明朝スタイル）──
+        if (isVertical) {
+          const vcommon = `fontfile=${fontFile}:${deco}:line_spacing=12:x=(w-tw)/2`;
+          if (lang !== "zh") {
+            await ffmpeg.writeFile(`t${i}.txt`, enc.encode(toVert(c.text)));
+            drawParts.push(`drawtext=textfile=t${i}.txt:${vcommon}:fontsize=${vfit(isHook ? st.hookSize : st.fontsize, c.text)}:fontcolor=${color}:y=130${offExpr}:${enable}`);
+          }
           if ((lang === "zh" || lang === "both") && zhLines[i]) {
-            const zx = lang === "both" ? "x=(w-tw)/2-70" : "x=(w-tw)/2";
-            drawParts.push(`drawtext=textfile=z${i}.txt:fontfile=font.otf:borderw=5:bordercolor=black@0.9:line_spacing=8:${zx}:fontsize=${vfit(lang === "both" ? 36 : (isHook ? st.hookSize : st.fontsize), zhLines[i])}:fontcolor=white:y=90${offExpr}:${enable}`);
+            await ffmpeg.writeFile(`z${i}.txt`, enc.encode(toVert(zhLines[i])));
+            const zx = lang === "both" ? "x=(w-tw)/2-105" : "x=(w-tw)/2";
+            drawParts.push(`drawtext=textfile=z${i}.txt:fontfile=${fontFile}:${deco}:line_spacing=12:${zx}:fontsize=${vfit(lang === "both" ? 54 : (isHook ? st.hookSize : st.fontsize), zhLines[i])}:fontcolor=white:y=130${offExpr}:${enable}`);
           }
           continue;
         }
 
-        const common = `fontfile=font.otf:borderw=5:bordercolor=black@0.9:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
-        // 見切れ防止：長い行はフォントを自動縮小（720px幅に収まるサイズへ）
-        const fit = (base: number, text: string) => Math.min(base, Math.max(26, Math.floor(660 / Math.max(1, text.length))));
+        // ── 横書き ──
+        const common = `fontfile=${fontFile}:${deco}:x=(w-tw)/2${st.box ? ":" + st.box : ""}`;
         const size = fit(isHook ? st.hookSize : st.fontsize, c.text);
+
+        // 語ごとポップ（日本語のみ）：Cueをchunk分割し、累積表示を時間で切り替えて1語ずつ出す
+        if (wordPop && lang === "ja") {
+          const chunks = popChunks(c.text);
+          const step = (c.end - c.start) / chunks.length;
+          let acc = "";
+          for (let k = 0; k < chunks.length; k++) {
+            acc += chunks[k];
+            const ks = c.start + k * step;
+            const ke = k === chunks.length - 1 ? c.end : c.start + (k + 1) * step;
+            const ken = `enable=between(t\\,${(ks / speed).toFixed(2)}\\,${(ke / speed).toFixed(2)})`;
+            await ffmpeg.writeFile(`t${i}_${k}.txt`, enc.encode(acc));
+            drawParts.push(`drawtext=textfile=t${i}_${k}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}${offExpr}:${ken}`);
+          }
+          continue;
+        }
+
         if (lang === "ja") {
+          await ffmpeg.writeFile(`t${i}.txt`, enc.encode(c.text));
           drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${size}:fontcolor=${color}:y=${st.y}${offExpr}:${enable}`);
         } else if (lang === "zh") {
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${fit(isHook ? st.hookSize : st.fontsize, zhLines[i])}:fontcolor=${color}:y=${st.y}${offExpr}:${enable}`);
+          if (zhLines[i]) {
+            await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhLines[i]));
+            drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=${fit(isHook ? st.hookSize : st.fontsize, zhLines[i])}:fontcolor=${color}:y=${st.y}${offExpr}:${enable}`);
+          }
         } else {
-          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${Math.round(size * 0.94)}:fontcolor=${color}:y=${st.y}-42${offExpr}:${enable}`);
-          if (zhLines[i]) drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=32:fontcolor=white@0.95:y=${st.y}+40${offExpr}:${enable}`);
+          await ffmpeg.writeFile(`t${i}.txt`, enc.encode(c.text));
+          drawParts.push(`drawtext=textfile=t${i}.txt:${common}:fontsize=${Math.round(size * 0.94)}:fontcolor=${color}:y=${st.y}-64${offExpr}:${enable}`);
+          if (zhLines[i]) {
+            await ffmpeg.writeFile(`z${i}.txt`, enc.encode(zhLines[i]));
+            drawParts.push(`drawtext=textfile=z${i}.txt:${common}:fontsize=48:fontcolor=white@0.95:y=${st.y}+60${offExpr}:${enable}`);
+          }
         }
       }
-      // 横撮り・スクエアでも中央を切り出して縦9:16（720x1280）30fpsに統一
+      // 横撮り・スクエアでも中央を切り出して縦9:16（1080×1920）30fpsに統一
       const speedV = speed !== 1 ? `setpts=PTS/${speed},` : "";
-      const normalize = `${speedV}crop='min(iw,ih*9/16)':ih,scale=720:1280,fps=30`;
+      const normalize = `${speedV}crop='min(iw,ih*9/16)':ih,scale=1080:1920,fps=30`;
       const graph =
         `${trims}${concatInputs}concat=n=${N}:v=1:a=1[vc][ac];` +
         `[vc]${normalize}${drawParts.length ? "," + drawParts.join(",") : ""}[vo]`;
@@ -553,7 +617,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
           const cRes = await fetch("/api/final-check", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ frames: frameB64, expectedPosition: STYLES[style].y === "(h-th)/2" ? "center" : "bottom" }),
+            body: JSON.stringify({ frames: frameB64, expectedPosition: isVertical ? "top" : STYLES[style].y === "(h-th)/2" ? "center" : "bottom" }),
           });
           const cData = await cRes.json();
           if (!cData.error) setFinalCheck(cData);
@@ -741,15 +805,15 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
                   className="w-full aspect-[9/16] object-cover" />
                 {activeCueIdx >= 0 && (
                   <div className={`absolute inset-x-2 flex justify-center gap-1 pointer-events-none ${
-                    vertical ? "top-[6%]" : STYLES[style].y === "(h-th)/2" ? "top-1/2 -translate-y-1/2 text-center" : "bottom-[13%] text-center"
+                    isVertical ? "top-[6%]" : STYLES[style].y === "(h-th)/2" ? "top-1/2 -translate-y-1/2 text-center" : "bottom-[13%] text-center"
                   }`}>
                     <span className="inline-block text-white font-black text-sm leading-snug px-1"
-                      style={{ textShadow: "0 0 4px #000, 0 0 8px #000, 2px 2px 2px #000", ...(vertical ? { writingMode: "vertical-rl" as const } : {}) }}>
-                      {shiftedCues[activeCueIdx].text}
+                      style={{ textShadow: "0 0 4px #000, 0 0 8px #000, 2px 2px 2px #000", fontFamily: STYLES[style].font === "mincho" ? "'Shippori Mincho', serif" : undefined, ...(isVertical ? { writingMode: "vertical-rl" as const } : {}) }}>
+                      {activeCueText}
                     </span>
                     {lang !== "ja" && zhLines[activeCueIdx] && (
-                      <span className={`text-white/90 font-bold text-[10px] ${vertical ? "" : "block mt-0.5"}`}
-                        style={{ textShadow: "0 0 4px #000, 2px 2px 2px #000", ...(vertical ? { writingMode: "vertical-rl" as const } : {}) }}>
+                      <span className={`text-white/90 font-bold text-[10px] ${isVertical ? "" : "block mt-0.5"}`}
+                        style={{ textShadow: "0 0 4px #000, 2px 2px 2px #000", ...(isVertical ? { writingMode: "vertical-rl" as const } : {}) }}>
                         {zhLines[activeCueIdx]}
                       </span>
                     )}
@@ -791,20 +855,25 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
               </button>
             ))}
           </div>
-          <p className="text-xs text-[#9ba0b8]">{STYLES[style].desc} ／ 出力は縦9:16・720×1280・30fpsに自動整形</p>
+          <p className="text-xs text-[#9ba0b8]">{STYLES[style].desc} ／ 出力は縦9:16・1080×1920・30fpsに自動整形</p>
 
-          {/* テロップの向き */}
+          {/* テロップの向き（縦長明朝スタイルは縦書き固定） */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-[#7b809c]">向き：</span>
-            <button onClick={() => setVertical(false)}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${!vertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
+            <button onClick={() => setVertical(false)} disabled={STYLES[style].vertical === true}
+              className={`px-3 py-1.5 text-xs rounded-full border transition-colors disabled:opacity-40 ${!isVertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
               ↔ 横書き
             </button>
             <button onClick={() => setVertical(true)}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${vertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
+              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${isVertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
               ↕ 縦書き
             </button>
           </div>
+
+          <label className="flex items-center gap-2 text-xs text-[#5a6080] cursor-pointer">
+            <input type="checkbox" checked={wordPop} onChange={e => setWordPop(e.target.checked)} disabled={isVertical} className="accent-indigo-500" />
+            💬 語ごとポップ（話すのに合わせて1語ずつ出す・横書きのみ）
+          </label>
 
           <label className="flex items-center gap-2 text-xs text-[#5a6080] cursor-pointer">
             <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-indigo-500" />
