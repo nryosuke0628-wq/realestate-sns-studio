@@ -20,13 +20,19 @@ export function threadsConfigured(genre = "realestate"): boolean {
   return credsFor(genre) !== null;
 }
 
-async function createContainer(text: string, creds: ThreadsCreds): Promise<string> {
+async function createContainer(text: string, creds: ThreadsCreds, replyToId?: string): Promise<string> {
   const res = await fetch(
     `https://graph.threads.net/v1.0/${creds.userId}/threads`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ media_type: "TEXT", text, access_token: creds.token }),
+      body: JSON.stringify({
+        media_type: "TEXT",
+        text,
+        // replyToId があれば、その投稿への返信として作成する（連投＝セルフリプライ）
+        ...(replyToId ? { reply_to_id: replyToId } : {}),
+        access_token: creds.token,
+      }),
     }
   );
   const data = await res.json();
@@ -49,11 +55,25 @@ async function publishContainer(containerId: string, creds: ThreadsCreds): Promi
   return data.id;
 }
 
-export async function postToThreads(text: string, genre = "realestate"): Promise<string> {
+export async function postToThreads(text: string, genre = "realestate", replyToId?: string): Promise<string> {
   const creds = credsFor(genre);
   if (!creds) throw new Error("このジャンルのThreadsアカウントが未連携です");
-  const containerId = await createContainer(text, creds);
+  const containerId = await createContainer(text, creds, replyToId);
   return publishContainer(containerId, creds);
+}
+
+// 複数投稿を「連投（セルフリプライ）」として1本のスレッドに投稿する。
+// 1件目を親、2件目以降は直前の投稿への返信としてぶら下げる。投稿IDの配列を返す。
+export async function postThreadChain(posts: string[], genre = "realestate"): Promise<string[]> {
+  const ids: string[] = [];
+  let parentId: string | undefined;
+  for (let i = 0; i < posts.length; i++) {
+    const id = await postToThreads(posts[i], genre, parentId);
+    ids.push(id);
+    parentId = id; // 次の投稿はこの投稿への返信にする
+    if (i < posts.length - 1) await new Promise((r) => setTimeout(r, 2500));
+  }
+  return ids;
 }
 
 // 投稿本文の整形（生成時のラベル・文字数表記を除去）

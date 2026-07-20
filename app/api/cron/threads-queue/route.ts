@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
-import { postToThreads, threadsConfigured, cleanThreadsPost } from "@/lib/threads";
+import { postThreadChain, threadsConfigured, cleanThreadsPost } from "@/lib/threads";
 
 export const maxDuration = 60;
 
@@ -36,11 +36,9 @@ export async function GET(request: NextRequest) {
 
     const item = data[0];
     try {
-      const posts: string[] = item.posts;
-      for (let i = 0; i < posts.length; i++) {
-        await postToThreads(cleanThreadsPost(posts[i]), genre);
-        if (i < posts.length - 1) await new Promise(r => setTimeout(r, 2500));
-      }
+      const posts: string[] = (item.posts as string[]).map(cleanThreadsPost);
+      // 1本目を親、続きはその返信としてぶら下げ、1つの連投スレッドにする
+      await postThreadChain(posts, genre);
       await supabase.from("threads_queue")
         .update({ status: "posted", posted_at: new Date().toISOString() })
         .eq("id", item.id);

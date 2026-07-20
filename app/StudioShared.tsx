@@ -48,23 +48,30 @@ export function ThreadsPanel({ posts }: { posts: string[] }) {
   const [statuses, setStatuses] = useState<Record<number, "idle" | "posting" | "done" | "error">>({});
   const [errors, setErrors] = useState<Record<number, string>>({});
 
-  const postOne = async (i: number, text: string) => {
+  // replyToId を渡すと、その投稿への返信として投稿する。成功時は投稿IDを返す
+  const postOne = async (i: number, text: string, replyToId?: string): Promise<string | null> => {
     setStatuses(p => ({ ...p, [i]: "posting" }));
     try {
       const clean = text.replace(/^【投稿\d+[^】]*】\n?/, "").replace(/\（約\d+文字\）/, "").trim();
-      const res = await fetch("/api/threads-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: clean, genre: currentGenre() }) });
+      const res = await fetch("/api/threads-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: clean, genre: currentGenre(), replyToId }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "投稿失敗");
       setStatuses(p => ({ ...p, [i]: "done" }));
+      return typeof data.postId === "string" ? data.postId : null;
     } catch (e) {
       setStatuses(p => ({ ...p, [i]: "error" }));
       setErrors(p => ({ ...p, [i]: e instanceof Error ? e.message : "エラー" }));
+      return null;
     }
   };
 
+  // 「全て投稿」＝連投。1本目を親、続きは直前の投稿への返信としてぶら下げ、1つのスレッドにする
   const postAll = async () => {
+    let parentId: string | undefined;
     for (let i = 0; i < posts.length; i++) {
-      await postOne(i, posts[i]);
+      const id = await postOne(i, posts[i], parentId);
+      if (!id) break; // 失敗したら連鎖を止める（宙に浮いた返信を作らない）
+      parentId = id;
       if (i < posts.length - 1) await new Promise(r => setTimeout(r, 2000));
     }
   };
