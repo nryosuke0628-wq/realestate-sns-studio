@@ -8,9 +8,12 @@ interface ThreadsCreds { userId: string; token: string }
 //   sales:      THREADS_USER_ID_SALES / THREADS_ACCESS_TOKEN_SALES
 function credsFor(genre: string): ThreadsCreds | null {
   const suffix = genre === "coaching" ? "_COACHING" : genre === "sales" ? "_SALES" : "";
-  const userId = process.env[`THREADS_USER_ID${suffix}`];
   const token = process.env[`THREADS_ACCESS_TOKEN${suffix}`];
-  return userId && token ? { userId, token } : null;
+  if (!token) return null;
+  // THREADS_USER_ID は任意。未設定ならユーザートークンで解決できる "me" を使う
+  // （Threads API は /me/threads を受け付けるため、トークンだけで投稿できる）
+  const userId = process.env[`THREADS_USER_ID${suffix}`] || "me";
+  return { userId, token };
 }
 
 export function threadsConfigured(genre = "realestate"): boolean {
