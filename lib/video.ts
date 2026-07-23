@@ -32,21 +32,44 @@ export function extractNarration(script: string): string[] {
   return lines;
 }
 
-// ナレーション行をテロップ用に短く分割（1枚あたり最大22文字目安）
-export function splitForCaptions(lines: string[]): string[] {
+// ナレーション行をテロップ用に短く分割（maxLen=1枚あたりの文字数目安。22≒2行/34≒3行）
+export function splitForCaptions(lines: string[], maxLen = 22): string[] {
   const out: string[] = [];
   for (const line of lines) {
-    if (line.length <= 22) { out.push(line); continue; }
+    if (line.length <= maxLen) { out.push(line); continue; }
     // 句読点で分割してから詰め直す
     const parts = line.split(/(?<=[。！？!?、])/);
     let buf = "";
     for (const p of parts) {
-      if ((buf + p).length > 22 && buf) { out.push(buf); buf = p; }
+      if ((buf + p).length > maxLen && buf) { out.push(buf); buf = p; }
       else buf += p;
     }
     if (buf) out.push(buf);
   }
   return out.filter(s => s.trim().length > 0);
+}
+
+// 🎙 台本なしモード：文字起こし（AI実測タイミング付きフレーズ）をテロップ＋タイミングに変換。
+// 長いフレーズは分割し、時間はフレーズ内で文字数比例に配分する
+export function transcriptToCaptions(
+  transcript: Phrase[], maxLen = 22,
+): { caps: string[]; timings: ({ start: number; end: number } | undefined)[] } {
+  const caps: string[] = [];
+  const timings: ({ start: number; end: number } | undefined)[] = [];
+  for (const p of transcript) {
+    const text = p.text.trim();
+    if (!text) continue;
+    const chunks = splitForCaptions([text], maxLen);
+    const total = chunks.reduce((s, c) => s + c.length, 0) || 1;
+    let cursor = p.start;
+    for (const c of chunks) {
+      const dur = (p.end - p.start) * (c.length / total);
+      caps.push(c);
+      timings.push({ start: cursor, end: cursor + dur });
+      cursor += dur;
+    }
+  }
+  return { caps, timings };
 }
 
 // 音声波形から発話区間を検出（RMSベース・適応しきい値）

@@ -71,19 +71,24 @@ const DATA_ANALYZE_PROMPT = `あなたは不動産Instagram専門のSNSアナリ
 
 日本語で出力。`;
 
-async function searchWeb(query: string, domains?: string[]): Promise<string> {
+async function searchWeb(query: string, domains?: string[], news?: boolean): Promise<string> {
   if (!process.env.TAVILY_API_KEY) return "";
   try {
     const client = tavily({ apiKey: process.env.TAVILY_API_KEY });
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000));
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
     const search = client.search(query, {
       maxResults: 3,
       searchDepth: "basic",
       ...(domains ? { includeDomains: domains } : {}),
+      // ニュースモード：直近7日・公開日付きで取得（エビデンス表記用）
+      ...(news ? { topic: "news" as const, days: 7 } : {}),
     });
     const result = await Promise.race([search, timeout]);
     if (!result) return "";
-    return result.results.map((r) => `● ${r.title}\nURL: ${r.url}\n${r.content.slice(0, 400)}`).join("\n\n");
+    return result.results.map((r) => {
+      const pub = (r as { publishedDate?: string }).publishedDate;
+      return `● ${r.title}${pub ? `（公開日: ${pub}）` : ""}\nURL: ${r.url}\n${r.content.slice(0, 400)}`;
+    }).join("\n\n");
   } catch { return ""; }
 }
 
@@ -109,7 +114,21 @@ const currentMonth = new Date().getMonth() + 1;
 
 // 複数クエリを並列検索して情報量を増やす（並列なので所要時間は1クエリ分）
 // 参考投稿はInstagramドメイン限定で検索し、note等の記事URLが混ざるのを防ぐ
-const SEARCH_MAP: Record<string, { q: string; domains?: string[] }[]> = {
+const SEARCH_MAP: Record<string, { q: string; domains?: string[]; news?: boolean }[]> = {
+  // 🧵 Threads毎日投稿：日付付きニュース＋Threads/Xのバズ動向
+  threads_daily: [
+    { q: `不動産 住宅ローン 金利 ニュース`, news: true },
+    { q: `${currentYear}年${currentMonth}月 不動産市場 話題`, news: true },
+    { q: `Threads X バズ 投稿 伸びる 書き方 ${currentYear}` },
+  ],
+  threads_daily_coaching: [
+    { q: `働き方 メンタル 自己成長 話題 ニュース`, news: true },
+    { q: `Threads X バズ 投稿 自己啓発 ${currentYear}` },
+  ],
+  threads_daily_sales: [
+    { q: `営業 ビジネス 商談 話題 ニュース`, news: true },
+    { q: `Threads X バズ 投稿 営業 ビジネス ${currentYear}` },
+  ],
   trend_collect: [
     { q: `不動産 リール バズった 再生数 万回 分析`, domains: ["instagram.com"] },
     { q: `不動産 リール TikTok バズ 再生回数 万 事例 ${currentYear}年` },
@@ -182,7 +201,7 @@ export async function POST(request: NextRequest) {
     // ジャンル専用の検索クエリがあればそちらを使う（例: trend_collect_coaching / daily_picks_ai）
     const searchKey = SEARCH_MAP[`${feature}_${genre}`] ? `${feature}_${genre}` : feature;
     if (SEARCH_MAP[searchKey]) {
-      const allResults = await Promise.all(SEARCH_MAP[searchKey].map(({ q, domains }) => searchWeb(q, domains)));
+      const allResults = await Promise.all(SEARCH_MAP[searchKey].map(({ q, domains, news }) => searchWeb(q, domains, news)));
       const results = allResults.filter(Boolean).join("\n\n");
       if (results) systemPrompt += `\n\n【リアルタイム検索結果】\n${results}`;
     }
@@ -192,7 +211,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 📦 リサーチ銀行：直近2週間の実測リサーチをネタ系生成に自動注入
-    if (feature === "idea_gen" || feature === "viral_convert" || feature === "weekly_plan" || feature === "daily_picks") {
+    if (feature === "idea_gen" || feature === "viral_convert" || feature === "weekly_plan" || feature === "daily_picks" || feature === "threads_daily") {
       const supabase = getSupabase();
       if (supabase) {
         try {
@@ -245,6 +264,7 @@ export async function POST(request: NextRequest) {
       caption_gen: 800,
       translate_captions: 1500,
       user_revision: 2000,
+      threads_daily: 1800,
       viral_collect: 1200,
       viral_convert: 2000,
       daily_picks: 1800,

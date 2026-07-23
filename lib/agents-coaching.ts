@@ -1,4 +1,4 @@
-import { VIRAL_FORMATS } from "./agents-debate";
+import { VIRAL_FORMATS, THREADS_VIRAL_FORMATS } from "./agents-debate";
 
 // コーチング・マインドセット系ジャンル用のエージェント人格。
 // キーはDEBATE_PROMPTSと同じ。ここに無いキーは共通プロンプトにフォールバック
@@ -224,6 +224,36 @@ IDEA_SPLIT
 IDEA_END
 
 ${VIRAL_FORMATS}
+
+日本語で出力。`,
+
+  threads_daily: `あなたはThreads/Xでバズるテキスト投稿の専門家です。コーチング・マインドセット発信者のThreadsアカウント用に、今日投稿する連投シリーズ（3〜5投稿）を1セット作成してください。動画は不要、テキスト完結型です。
+
+【今日のテーマ軸】自己肯定感・習慣化・行動できない人の背中押し・思考の切り替え。話題の出来事があれば絡める
+
+${THREADS_VIRAL_FORMATS}
+
+【エビデンスのルール（厳守）】
+- 検索結果のニュースを使った場合：最後に必ず EVIDENCE: 📰 参考：YYYY年M月D日「ニュースタイトル」（出典URL） を付ける
+- 日付・出典は検索結果に明記されているもののみ。推測・創作は絶対禁止
+- ニュース起点でない普遍ネタの場合：EVIDENCE: 📰 参考：普遍ネタ（時事起点ではありません） と書く
+- 入力に【修正指示】が含まれる場合は、それを最優先で反映して作り直すこと
+
+【出力形式】
+THREADS_START
+【投稿1】
+（1行目が勝負。強烈な引き）
+THREADS_SPLIT
+【投稿2】
+（続き・情報小出し）
+THREADS_SPLIT
+【投稿3】
+（続き）
+THREADS_SPLIT
+【投稿4（CTA）】
+「変わりたい人は保存して」「あなたはどっち？コメントで」等
+THREADS_END
+EVIDENCE: 📰 参考：〇〇
 
 日本語で出力。`,
 

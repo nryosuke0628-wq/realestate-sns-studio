@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import TodayTab from "./TodayTab";
+import ThreadsTab from "./ThreadsTab";
 import LibraryTab from "./LibraryTab";
 import CreateTab from "./CreateTab";
 import DashboardTab from "./DashboardTab";
+import EditorTab from "./EditorTab";
 
-type Tab = "today" | "stock" | "create" | "growth";
+type Tab = "threads" | "today" | "stock" | "edit" | "create" | "growth";
 type Genre = "realestate" | "coaching" | "sales";
 
 const GENRE_META: Record<Genre, { btn: string; tagline: string; engine: string }> = {
@@ -20,15 +22,18 @@ function applyGenreClass(g: Genre) {
   document.documentElement.classList.toggle("sales", g === "sales");
 }
 
+// 当面はThreads自動投稿がメイン運用のため、Threadsを先頭・デフォルトに
 const TABS: { key: Tab; en: string; jp: string }[] = [
-  { key: "today",  en: "Today",  jp: "今日" },
-  { key: "stock",  en: "Stock",  jp: "ライブラリ" },
-  { key: "create", en: "Create", jp: "作成ツール" },
-  { key: "growth", en: "Growth", jp: "ダッシュボード" },
+  { key: "threads", en: "Threads", jp: "自動投稿" },
+  { key: "stock",   en: "Stock",   jp: "ライブラリ" },
+  { key: "today",   en: "Video",   jp: "動画制作" },
+  { key: "edit",    en: "Edit",    jp: "動画編集" },
+  { key: "create",  en: "Create",  jp: "作成ツール" },
+  { key: "growth",  en: "Growth",  jp: "ダッシュボード" },
 ];
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTab] = useState<Tab>("threads");
   const [dark, setDark] = useState(false);
   const [genre, setGenre] = useState<Genre>("realestate");
 
@@ -63,9 +68,9 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-transparent">
       {/* エディトリアル・ヘッダー */}
-      <header className="px-5 md:px-8 pt-5 pb-1 flex items-end justify-between">
+      <header className="px-4 md:px-8 pt-5 pb-1 flex flex-wrap items-end justify-between gap-y-3 gap-x-4">
         <div>
-          <h1 className="display-type text-3xl md:text-4xl text-white leading-none">
+          <h1 className="display-type text-2xl md:text-4xl text-white leading-none">
             R agent <span className="text-[#8b96ff]">SNS studio.</span>
           </h1>
           <p className="text-[11px] text-white/50 mt-1.5 font-medium tracking-wide">
@@ -110,8 +115,10 @@ export default function Home() {
         </div>
       </nav>
       <main key={`${tab}-${genre}`} className="anim-in mx-2 md:mx-6 mt-3 mb-6 bg-white rounded-[28px] shadow-2xl shadow-black/40 overflow-hidden">
+        {tab === "threads" && <ThreadsTab />}
         {tab === "today"  && <TodayTab />}
         {tab === "stock"  && <LibraryTab />}
+        {tab === "edit"   && <EditorTab />}
         {tab === "create" && <CreateTab />}
         {tab === "growth" && <DashboardTab />}
       </main>

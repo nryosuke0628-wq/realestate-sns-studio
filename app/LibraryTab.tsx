@@ -119,7 +119,7 @@ interface QueueItem {
   created_at: string; posted_at: string | null;
 }
 
-function ThreadsQueueSection() {
+export function ThreadsQueueSection() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [enabled, setEnabled] = useState(true);
 

@@ -7,7 +7,10 @@ import {
   subtractRanges, encodeWav16k, cuesFromTimings,
   extractEditedAudio, proEditorPass, speechTimeToOriginal, originalToSpeechTime,
   Phrase, detectRetakes, mergeRange, findPhraseRanges, validateTimings, popChunks,
+  transcriptToCaptions,
 } from "@/lib/video";
+
+import { extractBlock } from "@/lib/studio-storage";
 
 // ライブラリ（localStorage）から台本を選ぶための最小限の読み込み
 interface StoredScript { id: string; title: string; script: string }
@@ -47,25 +50,44 @@ const CORE_URL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
 
 type Phase = "idle" | "analyzing" | "ready" | "rendering" | "done" | "error";
 type CaptionLang = "ja" | "zh" | "both";
-type StyleKey = "center" | "classic" | "white" | "mincho" | "pro" | "pop" | "karaoke" | "tate";
+type StyleKey = "vgothic" | "pro" | "classic" | "white" | "mincho" | "pop" | "karaoke" | "center" | "tate";
 
 // テロップスタイルプリセット（バズってる独り語りリールの型／サイズは1080×1920基準）
 // font: ゴシック(既定) or 明朝 ／ vertical: 縦書き ／ noBorder: 縁なし＋濃い影
 const STYLES: Record<StyleKey, {
-  label: string; desc: string;
+  label: string; desc: string; badge?: string;
   y: string; fontsize: number; hookSize: number;
   color: string; hookColor: string; box?: string;
   font?: "gothic" | "mincho"; vertical?: boolean; noBorder?: boolean; wordPop?: boolean;
 }> = {
-  center:  { label: "センター",   desc: "画面中央に特大文字（基本形）",     y: "(h-th)/2", fontsize: 76, hookSize: 96,  color: "white",    hookColor: "white" },
-  classic: { label: "定番",       desc: "白オンリー・下テロップ",           y: "h-th-255", fontsize: 70, hookSize: 88,  color: "white",    hookColor: "white" },
-  white:   { label: "白オンリー", desc: "色なしシンプル（中央）",           y: "(h-th)/2", fontsize: 70, hookSize: 90,  color: "white",    hookColor: "white" },
-  mincho:  { label: "明朝",       desc: "上品な明朝・全画面タイトル",       y: "(h-th)/2", fontsize: 72, hookSize: 96,  color: "white",    hookColor: "white", font: "mincho" },
-  pro:     { label: "プロ字幕",   desc: "袋文字＋マーカー箱＋特大フック・語ごとポップ", y: "h-th-285", fontsize: 70, hookSize: 112, color: "white", hookColor: "0xFFE24A", box: "box=1:boxcolor=black@0.55:boxborderw=22", wordPop: true },
-  pop:     { label: "ビビッド",   desc: "ピンク＋黒カード背景",             y: "h-th-285", fontsize: 70, hookSize: 88,  color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=24" },
-  karaoke: { label: "カラオケ風", desc: "話している行が水色に光る",         y: "h-th-180", fontsize: 66, hookSize: 84,  color: "0x7DE8FF", hookColor: "0x7DE8FF" },
-  tate:    { label: "縦長明朝",   desc: "縦書き明朝・縁なし白＋濃い影（映画的）", y: "(h-th)/2", fontsize: 78, hookSize: 104, color: "white", hookColor: "white", font: "mincho", vertical: true, noBorder: true },
+  vgothic: { label: "縦長ゴシック", desc: "センター・全部白・2行", badge: "推奨", y: "(h-th)/2", fontsize: 72, hookSize: 90, color: "white", hookColor: "white" },
+  pro:     { label: "プロ字幕",   desc: "袋文字＋マーカー箱",     y: "h-th-285", fontsize: 70, hookSize: 112, color: "white", hookColor: "0xFFE24A", box: "box=1:boxcolor=black@0.55:boxborderw=22", wordPop: true },
+  classic: { label: "定番",       desc: "白＋黄・下テロップ",     y: "h-th-255", fontsize: 70, hookSize: 88,  color: "white",    hookColor: "0xFFE24A" },
+  white:   { label: "白オンリー", desc: "色なしシンプル",         y: "(h-th)/2", fontsize: 70, hookSize: 90,  color: "white",    hookColor: "white" },
+  mincho:  { label: "明朝",       desc: "上品な全画面タイトル",   y: "(h-th)/2", fontsize: 72, hookSize: 96,  color: "white",    hookColor: "white", font: "mincho" },
+  pop:     { label: "ビビッド",   desc: "ピンク＋カード",         y: "h-th-285", fontsize: 70, hookSize: 88,  color: "0xFF6BA9", hookColor: "0xFF3D8F", box: "box=1:boxcolor=black@0.55:boxborderw=24" },
+  karaoke: { label: "カラオケ風", desc: "話す語が光る",           y: "h-th-180", fontsize: 66, hookSize: 84,  color: "0x7DE8FF", hookColor: "0x7DE8FF" },
+  center:  { label: "センター",   desc: "特大・イントロ無し",     y: "(h-th)/2", fontsize: 88, hookSize: 88,  color: "white",    hookColor: "white" },
+  tate:    { label: "縦長明朝",   desc: "縦書き・映画的",         y: "(h-th)/2", fontsize: 78, hookSize: 104, color: "white",    hookColor: "white", font: "mincho", vertical: true, noBorder: true },
 };
+
+// 添付UI風のトグルスイッチ（タイトル＋説明＋スライド式スイッチ）
+function Toggle({ checked, onChange, title, desc }: {
+  checked: boolean; onChange: (v: boolean) => void; title: string; desc: string;
+}) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)}
+      className="flex items-center justify-between gap-3 border border-[#e3e5ef] bg-white rounded-2xl p-3.5 text-left transition-colors hover:border-[#5b6cff]/60">
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-[#1e2440]">{title}</span>
+        <span className="block text-[11px] text-[#7b809c] mt-0.5">{desc}</span>
+      </span>
+      <span className={`shrink-0 w-11 h-6 rounded-full p-0.5 transition-colors ${checked ? "bg-[#5b6cff]" : "bg-[#d6d9e6]"}`}>
+        <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : ""}`} />
+      </span>
+    </button>
+  );
+}
 
 // presetNarration: Todayタブから承認済み台本を引き継ぐ / injectedFile: 撮影プロンプターの録画をそのまま流し込む
 export default function EditorTab({ presetNarration, injectedFile }: { presetNarration?: string; injectedFile?: File | null } = {}) {
@@ -97,9 +119,19 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
   const [lineTimings, setLineTimings] = useState<({ start: number; end: number } | undefined)[] | null>(null);
   const pipelineDoneRef = useRef<string>("");
   // スタイル・仕上げ
-  const [style, setStyle] = useState<StyleKey>("center"); // 基本はテロップ中央
+  const [style, setStyle] = useState<StyleKey>("vgothic"); // 推奨=縦長ゴシック
   const [vertical, setVertical] = useState(false); // 縦書きテロップ
   const [wordPop, setWordPop] = useState(false); // 語ごとポップ（1語ずつ出す）
+  // OPTIONS（添付UI準拠のトグル）
+  const [snsCapOn, setSnsCapOn] = useState(true);     // SNSキャプション自動生成
+  const [twoLineMax, setTwoLineMax] = useState(true); // テロップ最長2行（OFF=3行まで）
+  const [hookCard, setHookCard] = useState(false);    // 冒頭フック（冒頭3秒を特大強調）
+  const [skinSmooth, setSkinSmooth] = useState(true); // 肌補正（OFF=映像無加工）
+  // 台本なしモード：音声認識（文字起こし）由来の自動テロップ
+  const [autoCaps, setAutoCaps] = useState<string[]>([]);
+  const [snsCaption, setSnsCaption] = useState("");
+  const [snsCapLoading, setSnsCapLoading] = useState(false);
+  const [capCopied, setCapCopied] = useState(false);
   const [shift, setShift] = useState(0); // テロップ全体の時間シフト（秒）
   const [speed, setSpeed] = useState(1);       // 倍速（自動設定・手動上書き可）
   const [autoSpeed, setAutoSpeed] = useState<number | null>(null);
@@ -131,6 +163,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
     setFile(f); setPhase("analyzing"); setErrorMsg(""); setOutputUrl(null);
     setQaReport(null); setQaLog([]); setLineTimings(null); setShift(0);
     setSpeed(1); setAutoSpeed(null); setCapOffset(0); setTranscript([]); setRetakeCuts([]); setInstructLog([]); setBroll([]); setGenImages({}); setCheckFrames([]); setFinalCheck(null);
+    setAutoCaps([]); setSnsCaption(""); setCapCopied(false);
     setPreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
     pipelineDoneRef.current = "";
     try {
@@ -178,14 +211,18 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
   const isVertical = vertical || STYLES[style].vertical === true;
 
   // ナレーション・区間・実測タイミングが変わったらテロップ割り付けを再計算
+  // 台本なしの場合は音声認識（文字起こし）由来のautoCapsを使う
   useEffect(() => {
-    if (segments.length === 0 || !narration.trim()) { setCaptions([]); setCues([]); return; }
-    const caps = splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean));
+    const manual = narration.trim();
+    if (segments.length === 0 || (!manual && autoCaps.length === 0)) { setCaptions([]); setCues([]); return; }
+    const caps = manual
+      ? splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean), twoLineMax ? 22 : 34)
+      : autoCaps;
     setCaptions(caps);
     // AI監督の実測タイミングがあれば優先、なければ文字数比例で推定 → プロ編集家の自動修正を通す
     const base = lineTimings ? cuesFromTimings(caps, lineTimings, segments) : allocateCues(caps, segments);
     setCues(proEditorPass(base, segments).cues);
-  }, [narration, segments, lineTimings]);
+  }, [narration, segments, lineTimings, autoCaps, twoLineMax]);
 
   const keptDuration = segments.reduce((s, x) => s + (x.end - x.start), 0);
 
@@ -213,6 +250,29 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
     setTranslating(false);
   };
 
+  // 📝 SNSキャプション生成（Claude経由・caption_gen）。OFFや素材不足なら何もしない
+  const genSnsCaption = (source: string) => {
+    const text = source.trim();
+    if (!snsCapOn || text.length <= 10) return;
+    setSnsCapLoading(true);
+    fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        feature: "caption_gen",
+        input: text,
+        genre: localStorage.getItem("studio_genre") ?? "realestate",
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (!d.reply) return;
+        setSnsCaption(extractBlock(d.reply, "CAPTION_START", "CAPTION_END") || d.reply);
+      })
+      .catch(() => {})
+      .finally(() => setSnsCapLoading(false));
+  };
+
   const wavToB64 = (wav: Blob) => new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve((reader.result as string).split(",")[1]);
@@ -228,9 +288,11 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
     const { channel, sampleRate } = audioRef.current;
 
     try {
-      const caps = narration.trim()
-        ? splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean))
+      const maxLen = twoLineMax ? 22 : 34;
+      let caps = narration.trim()
+        ? splitForCaptions(narration.split("\n").map(l => l.trim()).filter(Boolean), maxLen)
         : [];
+      let tr: Phrase[] = [];
 
       // ── STEP 1: AI監督（元音声からカット判定＋字幕の実測タイミング）
       // 長尺（wav>3.5MB≒110秒超）はGeminiに送れないため、AI監督・採点はスキップして無音カットのみ適用（エラーにしない）
@@ -258,7 +320,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         advice = d.advice ?? "";
 
         // 文字起こしベースの言い直し検出（同じフレーズが2回→前の失敗テイクをカット）
-        const tr: Phrase[] = Array.isArray(d.transcript) ? d.transcript : [];
+        tr = Array.isArray(d.transcript) ? d.transcript : [];
         setTranscript(tr);
         if (tr.length > 0) {
           const retakes = detectRetakes(tr);
@@ -281,6 +343,18 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
             if (validated.corrected > 0) log(`🔬 波形実測との相互検証：${validated.corrected}行のズレを自動補正`);
           } else {
             log("🎯 実測タイミングが不完全のため推定方式で統一（ズレ防止）");
+          }
+        }
+
+        // 🎙 台本なしモード：文字起こしからテロップを自動生成（タイミングは実測値→波形で相互検証）
+        if (caps.length === 0 && tr.length > 0) {
+          const derived = transcriptToCaptions(tr, maxLen);
+          if (derived.caps.length > 0) {
+            caps = derived.caps;
+            setAutoCaps(derived.caps);
+            const validated = validateTimings(derived.timings, segs);
+            timings = validated.timings;
+            log(`🎙 音声認識：台本なしでも文字起こしからテロップ${derived.caps.length}枚を自動生成`);
           }
         }
       }
@@ -346,6 +420,11 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
       setLineTimings(timings);
       setQaReport({ score, iterations: Math.min(iter, 3), fixes: allFixes, issues, reshoot, advice });
       log("✅ QA完了：書き出し準備OK");
+
+      // 📝 SNSキャプション自動生成：動画の内容（文字起こし優先）から投稿文＋タグを作成
+      const capSource = (tr.length > 0 ? tr.map(p => p.text).join("\n") : caps.join("\n")).trim();
+      if (snsCapOn && capSource.length > 10) log("📝 SNSキャプションを生成中…");
+      genSnsCaption(capSource);
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "自動QAに失敗しました（手動でそのまま書き出しは可能です）");
     }
@@ -500,7 +579,7 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
 
       for (let i = 0; i < shiftedCues.length; i++) {
         const c = shiftedCues[i];
-        const isHook = c.start < 3; // 冒頭フックは大きく強調
+        const isHook = hookCard && c.start < 3; // 冒頭フックON時のみ冒頭3秒を特大強調
         // 倍速適用後の出力タイムラインに合わせて表示時刻を換算
         const enable = `enable=between(t\\,${(c.start / speed).toFixed(2)}\\,${(c.end / speed).toFixed(2)})`;
         const color = isHook ? st.hookColor : st.color;
@@ -557,12 +636,14 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
           }
         }
       }
-      // 横撮り・スクエアでも中央を切り出して縦9:16（1080×1920）30fpsに統一
+      // 横撮り・スクエアでも中央を切り出して縦9:16（1080×1920）30fpsに統一。
+      // 肌補正＝軽いソフトフォーカス＋わずかな明るさ/彩度UP（OFF=映像無加工・色そのまま）
       const speedV = speed !== 1 ? `setpts=PTS/${speed},` : "";
-      const normalize = `${speedV}crop='min(iw,ih*9/16)':ih,scale=1080:1920,fps=30`;
-      const graph =
+      const skin = skinSmooth ? ",unsharp=5:5:-0.45:5:5:0,eq=brightness=0.02:saturation=1.05" : "";
+      const makeGraph = (withSkin: boolean) =>
         `${trims}${concatInputs}concat=n=${N}:v=1:a=1[vc][ac];` +
-        `[vc]${normalize}${drawParts.length ? "," + drawParts.join(",") : ""}[vo]`;
+        `[vc]${speedV}crop='min(iw,ih*9/16)':ih,scale=1080:1920,fps=30${withSkin ? skin : ""}${drawParts.length ? "," + drawParts.join(",") : ""}[vo]`;
+      const graph = makeGraph(true);
       // 音声チェーン：倍速（音程維持）＋ノイズ除去＋音量正規化
       const audioFilters: string[] = [];
       if (speed !== 1) audioFilters.push(`atempo=${speed}`);
@@ -580,11 +661,11 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         "output.mp4",
       ];
       const code = await ffmpeg.exec(baseArgs(graph + audioGraph, audioMap));
-      if (code !== 0 && audioClean) {
-        // クリーンアップ非対応環境では倍速のみで再試行
-        setStatusMsg("音声フィルタ非対応のため再試行中…");
+      if (code !== 0 && (audioClean || skinSmooth)) {
+        // 一部フィルタ非対応の環境では、肌補正・音声クリーンアップ無しで再試行
+        setStatusMsg("一部フィルタ非対応のため再試行中…");
         const retryGraph = speed !== 1 ? `;[ac]atempo=${speed}[ao]` : "";
-        const retry = await ffmpeg.exec(baseArgs(graph + retryGraph, retryGraph ? "[ao]" : "[ac]"));
+        const retry = await ffmpeg.exec(baseArgs(makeGraph(false) + retryGraph, retryGraph ? "[ao]" : "[ac]"));
         if (retry !== 0) throw new Error("動画の書き出しに失敗しました");
       } else if (code !== 0) {
         throw new Error("動画の書き出しに失敗しました");
@@ -595,6 +676,11 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "video/mp4" });
       setOutputUrl(URL.createObjectURL(blob));
       setPhase("done");
+
+      // 📝 SNSキャプションが未生成なら書き出し時に生成（QAパイプライン未実行の環境向け）
+      if (!snsCaption) {
+        genSnsCaption(transcript.length > 0 ? transcript.map(p => p.text).join("\n") : captions.join("\n"));
+      }
 
       // 🕵️ 仕上げ検品：完成動画から冒頭・中盤・終盤のフレームを抽出しGeminiが実際の絵を検品
       try {
@@ -644,12 +730,12 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
   return (
     <div className="h-[calc(100vh-185px)] overflow-y-auto output-scroll px-3 md:px-6 py-5 space-y-5 max-w-3xl">
       <p className="text-sm text-[#5a6080] leading-relaxed">
-        撮影動画をアップ → <span className="text-[#5b6cff]">AI監督が言い淀みをチェック → 無音カット → 画面中央テロップ（日/中/2段組）</span>まで全自動。完成MP4はそのままインスタ投稿OK、微調整したい時はSRTをCapCutへ
+        撮影動画をアップ → <span className="text-[#5b6cff]">音声認識でテロップ自動生成（台本なしOK）→ AI監督が言い淀みをチェック → 無音カット</span>まで全自動。完成MP4はそのままインスタ投稿OK、微調整したい時はSRTをCapCutへ
       </p>
 
-      {/* STEP 1: 台本選択 */}
+      {/* STEP 1: 台本選択（任意） */}
       <div className="border border-[#e3e5ef] bg-white rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-bold text-[#1e2440]">① テロップにする台本を選ぶ</p>
+        <p className="text-sm font-bold text-[#1e2440]">① 台本を選ぶ<span className="ml-2 text-xs font-medium text-[#7b809c]">任意：無くても声を認識して自動でテロップを作ります</span></p>
         <select
           onChange={e => {
             const s = scripts.find(x => x.id === e.target.value);
@@ -790,6 +876,59 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
         )}
       </div>
 
+      {/* スタイルとオプション（常時表示・添付UI準拠） */}
+      <div className="border border-[#e3e5ef] bg-white rounded-2xl p-4 space-y-4">
+        {/* STYLE：カードグリッド */}
+        <div>
+          <p className="text-[11px] font-bold tracking-[0.3em] text-[#7b809c] mb-2">STYLE</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+            {(Object.keys(STYLES) as StyleKey[]).map(k => (
+              <button key={k} onClick={() => setStyle(k)}
+                className={`relative text-left rounded-2xl border p-3.5 transition-colors ${style === k ? "border-[#5b6cff] bg-[#eef0ff]" : "border-[#e3e5ef] bg-white hover:border-[#5b6cff]/60"}`}>
+                {STYLES[k].badge && (
+                  <span className="absolute -top-2 right-3 text-[10px] px-2 py-0.5 rounded-full bg-[#1c2340] text-white font-bold">{STYLES[k].badge}</span>
+                )}
+                <span className={`block text-sm font-bold ${style === k ? "text-[#5b6cff]" : "text-[#1e2440]"}`}>{STYLES[k].label}</span>
+                <span className="block text-[11px] text-[#7b809c] mt-0.5">{STYLES[k].desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* OPTIONS：トグルスイッチ */}
+        <div>
+          <p className="text-[11px] font-bold tracking-[0.3em] text-[#7b809c] mb-2">OPTIONS</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            <Toggle checked={snsCapOn} onChange={setSnsCapOn} title="📝 SNSキャプション自動生成" desc="内容を読み取って投稿文＋タグを作成" />
+            <Toggle checked={twoLineMax} onChange={setTwoLineMax} title="🔤 テロップ最長2行" desc="OFFで最長3行まで許可" />
+            <Toggle checked={hookCard} onChange={setHookCard} title="🎬 冒頭フック(タイトルカード)" desc="ONで冒頭3秒のテロップを特大強調" />
+            <Toggle checked={skinSmooth} onChange={setSkinSmooth} title="✨ 肌補正" desc="OFF=映像無加工(色そのまま)" />
+          </div>
+        </div>
+
+        {/* 細かい調整（向き・語ポップ・音声） */}
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="text-[#7b809c]">向き：</span>
+          <button onClick={() => setVertical(false)} disabled={STYLES[style].vertical === true}
+            className={`px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40 ${!isVertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
+            ↔ 横書き
+          </button>
+          <button onClick={() => setVertical(true)}
+            className={`px-3 py-1.5 rounded-full border transition-colors ${isVertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
+            ↕ 縦書き
+          </button>
+          <label className="flex items-center gap-1.5 text-[#5a6080] cursor-pointer ml-2">
+            <input type="checkbox" checked={wordPop} onChange={e => setWordPop(e.target.checked)} disabled={isVertical} className="accent-indigo-500" />
+            💬 語ごとポップ
+          </label>
+          <label className="flex items-center gap-1.5 text-[#5a6080] cursor-pointer ml-2">
+            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-indigo-500" />
+            🎤 音声クリーンアップ
+          </label>
+        </div>
+        <p className="text-xs text-[#9ba0b8]">出力は縦9:16・1080×1920・30fpsに自動整形</p>
+      </div>
+
       {/* STEP 3: 出力 */}
       {phase !== "idle" && phase !== "analyzing" && segments.length > 0 && (
         <div className="border border-[#5b6cff]/40 bg-[#5b6cff]/10 rounded-2xl p-4 space-y-3">
@@ -842,47 +981,14 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
             </div>
           )}
           {shiftedCues.length === 0 && (
-            <p className="text-xs font-bold text-red-500">⚠ テロップが0枚です。①で台本を選ぶかナレーションを入力してください</p>
+            <p className="text-xs font-bold text-orange-500">
+              {qaRunning ? "🎙 音声認識でテロップを生成中です…" : geminiReady ? "⚠ テロップが0枚です。①で台本を選ぶか、音声認識の完了をお待ちください" : "⚠ テロップが0枚です。台本なしの自動テロップにはGEMINI_API_KEYの設定が必要です（①で台本を選べばキー無しでも可）"}
+            </p>
           )}
 
-          {/* テロップスタイル選択 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-[#7b809c]">スタイル：</span>
-            {(Object.keys(STYLES) as StyleKey[]).map(k => (
-              <button key={k} onClick={() => setStyle(k)} title={STYLES[k].desc}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${style === k ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
-                {STYLES[k].label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-[#9ba0b8]">{STYLES[style].desc} ／ 出力は縦9:16・1080×1920・30fpsに自動整形</p>
-
-          {/* テロップの向き（縦長明朝スタイルは縦書き固定） */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-[#7b809c]">向き：</span>
-            <button onClick={() => setVertical(false)} disabled={STYLES[style].vertical === true}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-colors disabled:opacity-40 ${!isVertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
-              ↔ 横書き
-            </button>
-            <button onClick={() => setVertical(true)}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${isVertical ? "border-[#5b6cff] bg-[#5b6cff]/30 text-[#5b6cff]" : "border-[#d6d9e6] text-[#5a6080] hover:border-[#5b6cff]"}`}>
-              ↕ 縦書き
-            </button>
-          </div>
-
-          <label className="flex items-center gap-2 text-xs text-[#5a6080] cursor-pointer">
-            <input type="checkbox" checked={wordPop} onChange={e => setWordPop(e.target.checked)} disabled={isVertical} className="accent-indigo-500" />
-            💬 語ごとポップ（話すのに合わせて1語ずつ出す・横書きのみ）
-          </label>
-
-          <label className="flex items-center gap-2 text-xs text-[#5a6080] cursor-pointer">
-            <input type="checkbox" checked={audioClean} onChange={e => setAudioClean(e.target.checked)} className="accent-indigo-500" />
-            🎤 音声クリーンアップ（ノイズ除去＋音量をリール標準に正規化）
-          </label>
-
           <button onClick={render} disabled={phase === "rendering" || qaRunning || (lang !== "ja" && zhLines.length === 0)}
-            className="w-full py-3 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-colors">
-            {phase === "rendering" ? `処理中… ${progress}%` : qaRunning ? "自動QA完了までお待ちください…" : "🎬 書き出す（QA合格済みの内容で）"}
+            className="w-full py-3.5 btn-pop bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-50 text-white font-bold rounded-xl text-sm tracking-widest transition-colors">
+            {phase === "rendering" ? `処理中… ${progress}%` : qaRunning ? "自動QA完了までお待ちください…" : "⚡ REEL を生成する"}
           </button>
           {lang !== "ja" && zhLines.length === 0 && (
             <p className="text-xs text-orange-500">⚠ 先に「🈶 中国語を生成」を押してください</p>
@@ -897,8 +1003,16 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
           )}
 
           {outputUrl && (
-            <div className="space-y-2">
-              <video src={outputUrl} controls className="w-full max-h-80 rounded-xl bg-black" />
+            <div className="space-y-3">
+              <p className="text-sm font-bold text-green-600 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 inline-block animate-pulse" /> 完成しました
+              </p>
+              {/* スマホフレームのプレビュー（添付UI準拠） */}
+              <div className="mx-auto w-full max-w-[280px] rounded-[36px] border-4 border-[#2b3460] bg-black p-1.5 shadow-2xl">
+                <div className="rounded-[28px] overflow-hidden bg-black">
+                  <video src={outputUrl} controls playsInline className="w-full aspect-[9/16] object-contain bg-black" />
+                </div>
+              </div>
 
               {/* 🕵️ 仕上げ検品官の結果 */}
               {checking && <Spinner label="🕵️ 仕上げ検品官が完成動画をチェック中…" />}
@@ -925,9 +1039,27 @@ export default function EditorTab({ presetNarration, injectedFile }: { presetNar
               )}
 
               <a href={outputUrl} download="edited.mp4"
-                className="block text-center py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl text-sm transition-colors">
-                ⬇ 完成動画をダウンロード（そのままインスタ投稿OK）
+                className="btn-pop block mx-auto w-full max-w-[280px] text-center py-3 bg-[#1c2340] hover:bg-[#2a3358] text-white font-bold rounded-2xl text-sm transition-colors">
+                ⬇ ダウンロード
               </a>
+            </div>
+          )}
+
+          {/* 📝 SNS CAPTION（自動生成された投稿文＋タグ） */}
+          {(snsCaption || snsCapLoading) && (
+            <div className="border border-[#e3e5ef] bg-white rounded-2xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold tracking-[0.3em] text-[#7b809c]">SNS CAPTION</p>
+                {snsCaption && (
+                  <button onClick={() => { navigator.clipboard.writeText(snsCaption).then(() => { setCapCopied(true); setTimeout(() => setCapCopied(false), 1600); }).catch(() => {}); }}
+                    className="btn-pop text-xs px-3 py-1.5 border border-[#d6d9e6] hover:border-[#5b6cff] text-[#2a3052] rounded-xl transition-colors">
+                    {capCopied ? "✅ コピーしました" : "📋 コピー"}
+                  </button>
+                )}
+              </div>
+              {snsCapLoading
+                ? <Spinner label="動画の内容からキャプションを生成中…" />
+                : <pre className="text-xs text-[#2a3052] whitespace-pre-wrap leading-relaxed">{snsCaption}</pre>}
             </div>
           )}
 

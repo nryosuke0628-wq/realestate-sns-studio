@@ -140,7 +140,7 @@ export default function TodayTab() {
     setBusy("🌙 AIチームが台本を作成中…（1〜2分かかります）");
     if (discardId) await fetch(`/api/library?id=${discardId}`, { method: "DELETE" }).catch(() => {});
     try {
-      await fetch(`/api/cron/overnight?genre=${currentGenre()}`);
+      await fetch(`/api/cron/overnight?mode=video&genre=${currentGenre()}`);
     } catch { /* タイムアウトしても裏で完了することがある */ }
     reload();
     setBusy("");

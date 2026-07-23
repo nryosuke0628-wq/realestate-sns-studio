@@ -65,12 +65,37 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
   const results: Record<string, unknown> = {};
 
-  // ?genre=xxx なら単ジャンルのみ（Todayタブの「作り直し」用）。指定なしは3ジャンル並列
+  // ?genre=xxx なら単ジャンルのみ（作り直し用）。指定なしは3ジャンル並列
   const only = request.nextUrl.searchParams.get("genre");
   const genres = only && GENRES.includes(only) ? [only] : GENRES;
+  // ?mode=video で従来の動画台本パイプライン。デフォルトはThreads投稿案（当面のメイン運用）
+  const mode = request.nextUrl.searchParams.get("mode") === "video" ? "video" : "threads";
+  // ✏️ 修正指示付き作り直し（Threadsモードのみ）
+  const instruction = request.nextUrl.searchParams.get("instruction") ?? "";
 
   await Promise.all(genres.map(async (genre) => {
     try {
+      if (mode === "threads") {
+        // 🧵 Threads投稿案の生成（ニュース→バズ型→エビデンス付き連投）
+        const input = instruction
+          ? `【修正指示】${instruction}\n今日のThreads連投を作成してください`
+          : "今日のThreads連投を作成してください";
+        const reply = await callGenerate(origin, "threads_daily", input, genre);
+        const posts = parseThreads(reply);
+        if (posts.length === 0) throw new Error("投稿の解析に失敗（THREADSマーカーなし）");
+        const evMatch = reply.match(/EVIDENCE[：:]\s*([\s\S]*?)(?:\n\n|$)/);
+        const evidence = evMatch ? evMatch[1].trim() : "📰 参考：記載なし";
+        const firstLine = posts[0].replace(/^【投稿\d+[^】]*】\n?/, "").split("\n").find(l => l.trim()) ?? "Threads投稿";
+        const id = `threads-${genre}-${Date.now()}`;
+        const { error } = await supabase.from("library_items").insert({
+          id, genre, title: firstLine.slice(0, 40), script: reply,
+          threads: posts, caption: evidence,
+          status: "pending_review", source: "threads_daily",
+        });
+        if (error) throw new Error(error.message);
+        results[genre] = { success: true, mode: "threads", title: firstLine.slice(0, 40) };
+        return;
+      }
       // ① 今日の3案（リーチ最大化目的で自動選定）。フォーマット揺れは1回リトライ
       let picksRes = await callGenerate(origin, "daily_picks", "【今日の目的】リーチ最大化", genre);
       let ideas = parseIdeas(picksRes);
