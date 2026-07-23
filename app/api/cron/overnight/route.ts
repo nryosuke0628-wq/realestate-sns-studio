@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { postThreadChain, threadsConfigured, cleanThreadsPost } from "@/lib/threads";
 import { appSecret } from "@/lib/secret";
 
 export const maxDuration = 300; // 討論フルパイプライン（AI呼び出し7回）は60秒を超えるため
@@ -75,6 +76,8 @@ export async function GET(request: NextRequest) {
   // auto=1: 承認をスキップして自動投稿キューへ直行（完全自動運用）／count=2: テーマ違いで2本生成
   const auto = request.nextUrl.searchParams.get("auto") === "1";
   const count = request.nextUrl.searchParams.get("count") === "2" ? 2 : 1;
+  // post_first=1: 1本目を生成後その場で投稿（無料プランのCron回数制限内で朝・夜の2投稿を実現）
+  const postFirst = request.nextUrl.searchParams.get("post_first") === "1";
 
   await Promise.all(genres.map(async (genre) => {
     try {
@@ -96,8 +99,21 @@ export async function GET(request: NextRequest) {
           const firstLine = posts[0].replace(/^【投稿\d+[^】]*】\n?/, "").split("\n").find(l => l.trim()) ?? "Threads投稿";
           titles.push(firstLine.slice(0, 40));
 
-          if (auto) {
-            // 完全自動：承認なしで投稿キューへ直行（8時・19時のCronが1本ずつ投稿）
+          if (auto && postFirst && k === 0 && threadsConfigured(genre)) {
+            // 1本目はその場で連投スレッドとして即時投稿（朝の投稿）
+            try {
+              await postThreadChain(posts.map(p => cleanThreadsPost(p)), genre);
+              await supabase.from("threads_queue").insert({
+                title: firstLine.slice(0, 40), posts, genre, status: "posted", posted_at: new Date().toISOString(),
+              });
+            } catch {
+              // 投稿失敗時はキューに退避（19時のCronが再挑戦）
+              await supabase.from("threads_queue").insert({
+                title: firstLine.slice(0, 40), posts, genre, status: "pending",
+              });
+            }
+          } else if (auto) {
+            // 完全自動：承認なしで投稿キューへ直行（19時のCronが投稿）
             const { error } = await supabase.from("threads_queue").insert({
               title: firstLine.slice(0, 40), posts, genre, status: "pending",
             });

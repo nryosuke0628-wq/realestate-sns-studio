@@ -107,7 +107,7 @@ export default function ThreadsTab() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="display-type text-xl text-[#171c33]">Threads<span className="text-[#5b6cff]">.</span></h2>
-          <p className="text-xs text-[#9ba0b8] mt-0.5">完全自動運用中：毎朝6時に2本自動生成 → 8時と19時に1本ずつ自動投稿。下のキューから投稿前の削除・確認ができます</p>
+          <p className="text-xs text-[#9ba0b8] mt-0.5">完全自動運用中：毎朝8時に2本自動生成→1本目は即時投稿・2本目は19時に自動投稿。下のキューから投稿前の削除ができます</p>
         </div>
         <button onClick={() => regenerate()} disabled={!!busy}
           className="btn-pop px-4 py-2 bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-40 text-white text-xs font-bold rounded-xl">

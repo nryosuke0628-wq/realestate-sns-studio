@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
     results.insights = { error: e instanceof Error ? e.message : "failed" };
   }
   try {
-    // 完全自動運用：Threads投稿を2本生成し、承認なしで自動投稿キューへ（8時・19時に1本ずつ投稿）
-    const overnightRes = await fetch(`${origin}/api/cron/overnight?auto=1&count=2`, { headers });
+    // 完全自動運用：2本生成→1本目は即時投稿（朝8時）、2本目はキュー経由で19時に自動投稿
+    const overnightRes = await fetch(`${origin}/api/cron/overnight?auto=1&count=2&post_first=1`, { headers });
     results.overnight = await overnightRes.json();
   } catch (e) {
     results.overnight = { error: e instanceof Error ? e.message : "failed" };
