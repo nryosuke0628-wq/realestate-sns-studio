@@ -140,7 +140,7 @@ export function ThreadsQueueSection() {
   return (
     <section>
       <h2 className="text-sm font-bold text-[#1e2440] mb-1">🧵 Threads自動投稿キュー</h2>
-      <p className="text-xs text-[#9ba0b8] mb-3">{currentGenre() !== "realestate" ? "⚠ このジャンル用Threadsアカウントの連携までは投稿されず、キューに貯まります（連携後は毎日19:00に自動投稿）" : "毎日19:00に上から1件ずつ自動投稿されます"}</p>
+      <p className="text-xs text-[#9ba0b8] mb-3">{currentGenre() !== "realestate" ? "⚠ このジャンル用Threadsアカウントの連携までは投稿されず、キューに貯まります（連携後は毎日19:00に自動投稿）" : "毎日8:00と19:00に上から1件ずつ自動投稿されます"}</p>
       <div className="space-y-2">
         {items.map(q => (
           <div key={q.id} className="flex items-center gap-3 border border-[#e3e5ef] bg-white rounded-xl px-4 py-3">

@@ -72,28 +72,47 @@ export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get("mode") === "video" ? "video" : "threads";
   // ✏️ 修正指示付き作り直し（Threadsモードのみ）
   const instruction = request.nextUrl.searchParams.get("instruction") ?? "";
+  // auto=1: 承認をスキップして自動投稿キューへ直行（完全自動運用）／count=2: テーマ違いで2本生成
+  const auto = request.nextUrl.searchParams.get("auto") === "1";
+  const count = request.nextUrl.searchParams.get("count") === "2" ? 2 : 1;
 
   await Promise.all(genres.map(async (genre) => {
     try {
       if (mode === "threads") {
-        // 🧵 Threads投稿案の生成（ニュース→バズ型→エビデンス付き連投）
-        const input = instruction
-          ? `【修正指示】${instruction}\n今日のThreads連投を作成してください`
-          : "今日のThreads連投を作成してください";
-        const reply = await callGenerate(origin, "threads_daily", input, genre);
-        const posts = parseThreads(reply);
-        if (posts.length === 0) throw new Error("投稿の解析に失敗（THREADSマーカーなし）");
-        const evMatch = reply.match(/EVIDENCE[：:]\s*([\s\S]*?)(?:\n\n|$)/);
-        const evidence = evMatch ? evMatch[1].trim() : "📰 参考：記載なし";
-        const firstLine = posts[0].replace(/^【投稿\d+[^】]*】\n?/, "").split("\n").find(l => l.trim()) ?? "Threads投稿";
-        const id = `threads-${genre}-${Date.now()}`;
-        const { error } = await supabase.from("library_items").insert({
-          id, genre, title: firstLine.slice(0, 40), script: reply,
-          threads: posts, caption: evidence,
-          status: "pending_review", source: "threads_daily",
-        });
-        if (error) throw new Error(error.message);
-        results[genre] = { success: true, mode: "threads", title: firstLine.slice(0, 40) };
+        // 🧵 Threads投稿案の生成（ニュース→バズ型→エビデンス付き連投）。count=2ならテーマ違いで2本
+        const titles: string[] = [];
+        for (let k = 0; k < count; k++) {
+          let input = instruction
+            ? `【修正指示】${instruction}\n今日のThreads連投を作成してください`
+            : "今日のThreads連投を作成してください";
+          if (k === 1) {
+            input += `\n【重要】1本目「${titles[0] ?? ""}」とはテーマも型も変えること。1本目がニュース便乗なら2本目は普遍ネタ（あるある・逆張り・リスト型など）にする`;
+          }
+          const reply = await callGenerate(origin, "threads_daily", input, genre);
+          const posts = parseThreads(reply);
+          if (posts.length === 0) throw new Error("投稿の解析に失敗（THREADSマーカーなし）");
+          const evMatch = reply.match(/EVIDENCE[：:]\s*([\s\S]*?)(?:\n\n|$)/);
+          const evidence = evMatch ? evMatch[1].trim() : "📰 参考：記載なし";
+          const firstLine = posts[0].replace(/^【投稿\d+[^】]*】\n?/, "").split("\n").find(l => l.trim()) ?? "Threads投稿";
+          titles.push(firstLine.slice(0, 40));
+
+          if (auto) {
+            // 完全自動：承認なしで投稿キューへ直行（8時・19時のCronが1本ずつ投稿）
+            const { error } = await supabase.from("threads_queue").insert({
+              title: firstLine.slice(0, 40), posts, genre, status: "pending",
+            });
+            if (error) throw new Error(error.message);
+          } else {
+            const id = `threads-${genre}-${Date.now()}-${k}`;
+            const { error } = await supabase.from("library_items").insert({
+              id, genre, title: firstLine.slice(0, 40), script: reply,
+              threads: posts, caption: evidence,
+              status: "pending_review", source: "threads_daily",
+            });
+            if (error) throw new Error(error.message);
+          }
+        }
+        results[genre] = { success: true, mode: "threads", auto, titles };
         return;
       }
       // ① 今日の3案（リーチ最大化目的で自動選定）。フォーマット揺れは1回リトライ

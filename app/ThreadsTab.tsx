@@ -107,7 +107,7 @@ export default function ThreadsTab() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="display-type text-xl text-[#171c33]">Threads<span className="text-[#5b6cff]">.</span></h2>
-          <p className="text-xs text-[#9ba0b8] mt-0.5">毎朝6時、ニュースとバズの型からエビデンス付き投稿案が届きます。承認するだけで19時に自動投稿</p>
+          <p className="text-xs text-[#9ba0b8] mt-0.5">完全自動運用中：毎朝6時に2本自動生成 → 8時と19時に1本ずつ自動投稿。下のキューから投稿前の削除・確認ができます</p>
         </div>
         <button onClick={() => regenerate()} disabled={!!busy}
           className="btn-pop px-4 py-2 bg-[#1c2340] hover:bg-[#2a3358] disabled:opacity-40 text-white text-xs font-bold rounded-xl">
@@ -123,7 +123,7 @@ export default function ThreadsTab() {
       {!loading && enabled && items.length === 0 && !busy && (
         <div className="border border-[#e3e5ef] bg-white rounded-2xl p-8 text-center">
           <div className="text-4xl mb-3">🧵</div>
-          <p className="text-sm text-[#5a6080] mb-4">今日の投稿案はまだありません。<br />毎朝6:00に自動生成されます</p>
+          <p className="text-sm text-[#5a6080] mb-4">手動の投稿案はありません（自動運用分は下のキューに入ります）。<br />追加で作りたいときは下のボタンから</p>
           <button onClick={() => regenerate()}
             className="btn-pop px-6 py-2.5 bg-[#1c2340] hover:bg-[#2a3358] text-white text-sm font-bold rounded-xl">
             ⚡ 今すぐ生成する
