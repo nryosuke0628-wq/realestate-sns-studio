@@ -64,22 +64,19 @@ export default function ThreadsTab() {
     reload(); setQueueKey(k => k + 1);
   };
 
-  // ⚡ 今すぐ投稿（連投を順番にThreadsへ）
+  // ⚡ 今すぐ投稿：サーバー側で1本の連投スレッド（1件目が親・続きは返信）として投稿
   const postNow = async (item: ThreadsDraft) => {
     setPostingId(item.id);
+    setPostProgress(`${item.threads.length}連スレッドを投稿中…`);
     try {
-      for (let i = 0; i < item.threads.length; i++) {
-        setPostProgress(`投稿中 ${i + 1}/${item.threads.length}…`);
-        const res = await fetch("/api/threads-post", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: cleanPost(item.threads[i]), genre: currentGenre() }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "投稿失敗");
-        if (i < item.threads.length - 1) await new Promise(r => setTimeout(r, 2500));
-      }
+      const res = await fetch("/api/threads-post", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posts: item.threads, genre: currentGenre() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "投稿失敗");
       await fetch(`/api/library?id=${item.id}`, { method: "DELETE" }).catch(() => {});
-      setNotice("🎉 Threadsに投稿しました！");
+      setNotice("🎉 連投スレッドとしてThreadsに投稿しました！");
       reload();
     } catch (e) {
       setNotice(`⚠ ${e instanceof Error ? e.message : "投稿に失敗しました"}`);
