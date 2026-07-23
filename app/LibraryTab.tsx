@@ -119,13 +119,13 @@ interface QueueItem {
   created_at: string; posted_at: string | null;
 }
 
-export function ThreadsQueueSection() {
+export function ThreadsQueueSection({ pendingOnly = false }: { pendingOnly?: boolean } = {}) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [enabled, setEnabled] = useState(true);
 
   const reload = () => {
     fetch(`/api/threads-queue?genre=${currentGenre()}`).then(r => r.json())
-      .then(d => { setItems(d.items ?? []); setEnabled(d.enabled ?? false); })
+      .then(d => { const all = d.items ?? []; setItems(pendingOnly ? all.filter((q: QueueItem) => q.status !== "posted") : all); setEnabled(d.enabled ?? false); })
       .catch(() => setEnabled(false));
   };
   useEffect(() => { reload(); }, []);

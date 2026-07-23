@@ -28,6 +28,61 @@ function Spinner({ label }: { label: string }) {
   );
 }
 
+// 📜 直近の自動投稿履歴（posted のものを新しい順に表示）
+interface PostedItem { id: number; title: string; posts: string[]; status: string; posted_at: string | null; created_at: string }
+
+function PostHistorySection() {
+  const [items, setItems] = useState<PostedItem[]>([]);
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/threads-queue?genre=${currentGenre()}`).then(r => r.json())
+      .then(d => {
+        const posted = (d.items ?? [])
+          .filter((q: PostedItem) => q.status === "posted")
+          .sort((a: PostedItem, b: PostedItem) =>
+            new Date(b.posted_at ?? b.created_at).getTime() - new Date(a.posted_at ?? a.created_at).getTime())
+          .slice(0, 10);
+        setItems(posted);
+      })
+      .catch(() => {});
+  }, []);
+
+  if (items.length === 0) return null;
+
+  return (
+    <section>
+      <h2 className="text-sm font-bold text-[#1e2440] mb-1">📜 投稿履歴</h2>
+      <p className="text-xs text-[#9ba0b8] mb-3">直近の自動投稿（最新10件）。タップで全文を確認できます</p>
+      <div className="space-y-2">
+        {items.map(q => (
+          <div key={q.id} className="border border-[#e3e5ef] bg-white rounded-xl px-4 py-3">
+            <button onClick={() => setOpenId(openId === q.id ? null : q.id)}
+              className="w-full flex items-center gap-3 text-left">
+              <span className="text-xs text-green-600 shrink-0">✅</span>
+              <span className="flex-1 min-w-0 text-xs font-semibold text-[#1e2440] truncate">{q.title}</span>
+              <span className="text-[10px] text-[#9ba0b8] shrink-0">
+                {q.posted_at ? new Date(q.posted_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
+              </span>
+              <span className="text-[10px] text-[#9ba0b8] shrink-0">{q.posts.length}連 {openId === q.id ? "▲" : "▼"}</span>
+            </button>
+            {openId === q.id && (
+              <div className="mt-3 space-y-2 border-t border-[#e3e5ef] pt-3">
+                {q.posts.map((p, i) => (
+                  <div key={i} className="bg-[#f1f2f7] rounded-lg px-3 py-2">
+                    <p className="text-[10px] text-[#9ba0b8] font-bold mb-0.5">投稿 {i + 1}</p>
+                    <p className="text-xs text-[#1e2440] whitespace-pre-wrap leading-relaxed">{cleanPost(p)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function ThreadsTab() {
   const [items, setItems] = useState<ThreadsDraft[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,8 +258,11 @@ export default function ThreadsTab() {
 
       {/* 予約キュー */}
       <div key={queueKey}>
-        <ThreadsQueueSection />
+        <ThreadsQueueSection pendingOnly />
       </div>
+
+      {/* 投稿履歴 */}
+      <PostHistorySection />
     </div>
   );
 }

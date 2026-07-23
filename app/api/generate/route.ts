@@ -264,7 +264,7 @@ export async function POST(request: NextRequest) {
       caption_gen: 800,
       translate_captions: 1500,
       user_revision: 2000,
-      threads_daily: 1800,
+      threads_daily: 2600,
       viral_collect: 1200,
       viral_convert: 2000,
       daily_picks: 1800,
