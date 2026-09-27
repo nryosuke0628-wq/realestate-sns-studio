@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { refreshThreadsTokens } from "@/lib/threads";
 
 export const maxDuration = 300; // trend+insights+overnightを直列実行するため
 
@@ -17,6 +18,12 @@ export async function GET(request: NextRequest) {
   if (process.env.CRON_SECRET) headers["authorization"] = `Bearer ${process.env.CRON_SECRET}`;
 
   const results: Record<string, unknown> = {};
+  try {
+    // Threadsトークンの60日失効を防ぐため、投稿より先に延長しておく
+    results.threadsToken = await refreshThreadsTokens();
+  } catch (e) {
+    results.threadsToken = { error: e instanceof Error ? e.message : "failed" };
+  }
   try {
     const trendRes = await fetch(`${origin}/api/cron/trend`, { headers });
     results.trend = await trendRes.json();
